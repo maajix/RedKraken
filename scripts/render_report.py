@@ -107,6 +107,12 @@ def audit_summary(directory: Path) -> list[str]:
     return [f"Structured audit events: {len(events)}.", "By tool/phase: " + ", ".join(f"{key}={value}" for key, value in sorted(tools.items())) + "."]
 
 
+def background_section(directory: Path) -> list[str]:
+    notes = directory / "state" / "notes.md"
+    text = notes.read_text(encoding="utf-8").strip() if notes.exists() else ""
+    return ["## Background & Environment", "", text, ""] if text else []
+
+
 def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], input_warnings: list[str]) -> str:
     counts = Counter(str(row.get("severity", "info")).lower() for row in rows if row.get("status") not in OMIT_MAIN)
     lines = [
@@ -123,6 +129,7 @@ def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], 
         f"- Destructive actions allowed: `{str(bool(config.get('destructive_allowed', False))).lower()}`",
         f"- Time window: `{md(config.get('time_window') or 'any')}`",
         "",
+        *background_section(directory),
         "## Methodology",
         "",
         "Scope-gated recon -> structured triage -> family testing -> evidence-backed confirmation -> deterministic reporting.",

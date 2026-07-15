@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PyYAML
+        run: python3 -m pip install PyYAML==6.0.3
+
+      - name: Scope check self-test
+        run: bash tests/test_scope_check.sh
+
+      - name: Code preflight self-test
+        if: always()
+        run: bash tests/test_code_preflight.sh
+
+      - name: Whitebox audit smoke test
+        if: always()
+        run: bash tests/test_audit_smoke.sh
+
+      - name: Imported-note coverage gate
+        if: always()
+        run: bash scripts/check_coverage.sh
+
+      - name: Modern coverage gate
+        if: always()
+        run: bash tests/test_modern_coverage.sh
+
+      - name: Report renderer regression test
+        if: always()
+        run: python3 tests/test_render_report.py
+
+      - name: Scope-guard hook regression test
+        if: always()
+        run: python3 tests/test_scope_guard_hook.py

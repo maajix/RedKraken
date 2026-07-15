@@ -2,7 +2,24 @@
 engagements/*
 docs/*
 .active_engagement
-.claude
+
+# The Claude Code harness ships (agents, commands, hooks, skills, settings.json).
+# Keep local/personal/runtime/secret state out:
+.claude/settings.local.json
+.claude/.credentials.json
+.claude/launch.json
+.claude/routines/
+.claude/workflows/
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
+.claude/todos/
+.claude/shell-snapshots/
+.claude/statsig/
+.claude/projects/
+.claude/history.jsonl
+.claude/ide/
+.claude/**/__pycache__/
+.mcp.json
 
 # local noise
 *.log

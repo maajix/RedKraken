@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "Grep", "Glob", "Task",
+      "Bash(curl:*)", "Bash(wget:*)", "Bash(httpx:*)", "Bash(katana:*)",
+      "Bash(ffuf:*)", "Bash(gobuster:*)", "Bash(feroxbuster:*)",
+      "Bash(nuclei:*)", "Bash(nikto:*)", "Bash(whatweb:*)", "Bash(wafw00f:*)",
+      "Bash(subfinder:*)", "Bash(amass:*)", "Bash(dnsx:*)", "Bash(gau:*)", "Bash(waybackurls:*)",
+      "Bash(paramspider:*)", "Bash(sqlmap:*)", "Bash(dalfox:*)", "Bash(jwt-tool:*)",
+      "Bash(wpscan:*)", "Bash(nmap:*)", "Bash(openssl:*)",
+      "Bash(mitmdump:*)", "Bash(playwright:*)", "Bash(schemathesis:*)", "Bash(grpcurl:*)", "Bash(zaproxy:*)",
+      "Bash(jq:*)", "Bash(python3:*)", "Bash(./lib/*)", "Bash(bash lib/*)",
+      "Bash(./scripts/*)", "Bash(bash scripts/*)",
+      "Bash(mkdir:*)", "Bash(cat:*)", "Bash(grep:*)", "Bash(sort:*)", "Bash(awk:*)", "Bash(sed:*)"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/scope_guard_hook.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/audit_hook.sh" }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/audit_hook.sh" }
+        ]
+      }
+    ]
+  }
+}
