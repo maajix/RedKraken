@@ -36,7 +36,6 @@ library.
 - [Open-source toolchain](#open-source-toolchain)
 - [Repo layout](#repo-layout)
 - [Tests](#tests)
-- [License](#license)
 
 ## Why RedKraken
 
@@ -61,13 +60,31 @@ library.
 
 ## Quick start
 
+This is built to run inside Claude Code, so the fastest way in is to just say
+what you want in plain English and let it handle the setup.
+
 ```bash
 git clone https://github.com/maajix/RedKraken.git
 cd RedKraken
+claude
+```
 
-# Report installed, missing, and broken tools. Installation is always explicit.
-bash lib/preflight.sh
-bash lib/preflight.sh --install
+Then, in the chat:
+
+> Set up a new engagement called `acme` for `https://app.acme.com`, in scope
+> `*.acme.com`, then run a full pentest.
+
+Claude creates `engagements/acme/engagement.yaml` from the template, confirms
+scope and intent with you, runs `bash lib/preflight.sh`, and drives `/pentest
+engagements/acme` end to end. The same works for narrower asks — "just run
+recon", "audit the source in `./app` instead", "regenerate the report".
+
+Everything Claude runs is ordinary shell underneath, so the manual path still
+works if you want it (scripting, CI, or just poking around):
+
+```bash
+bash lib/preflight.sh                  # report installed/missing/broken tools
+bash lib/preflight.sh --install        # optional, explicit
 
 mkdir -p engagements/acme
 cp scope/engagement.example.yaml engagements/acme/engagement.yaml
@@ -242,9 +259,3 @@ bash tests/test_audit_smoke.sh
 bash scripts/check_coverage.sh
 bash tests/test_modern_coverage.sh
 ```
-
-## License
-
-No license file is currently included. Until one is added, treat this
-repository as all-rights-reserved — open an issue if you need explicit reuse
-terms.
