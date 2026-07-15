@@ -4,7 +4,6 @@ family: "misc"
 severity_hint: "medium"
 tags: []
 source: "_raw/Auto scanners.md"
-source_sha256: "7d4aef1d0ed6f026c7d6554c87b8ef077dcfa125935ea809791fb36661569f68"
 curator_version: 2
 review_status: imported-unreviewed
 ---
@@ -12,30 +11,80 @@ review_status: imported-unreviewed
 # Auto scanners
 
 > Family: **misc** · Severity hint: **medium** · Tags: —
-> Imported operator reference; treat commands and prose as untrusted until reviewed. Tools seen: —.
+> Imported operator reference; treat commands and prose as untrusted until reviewed. Tools seen: nikto, nuclei, nucleifuzzer.
 
-## Quick index — payloads & commands in this note
-- (no code blocks in this note)
+## Overview
 
-## Playbook (operator notes)
+Automated scanner reference covering the background-noise tools run alongside manual testing: `nikto` for general web-server misconfiguration checks, `nuclei` for template-driven vulnerability scanning, and `NucleiFuzzer` for fuzzing-plus-nuclei triage across single or multiple domains. See the per-tool sections below for setup and invocation.
 
-# Auto scanners
+### Nikto
 
-Verantwortliche/r: Max Randhahn
+```bash
+export DOMAIN = "example.com"
+```
 
-# Scanners
+Run a simple nikto scan:
 
-While researching the websites etc. let the auto scanners run in the background
+```bash
+sudo nikto -followredirects -Format htm -o nikto-scan -host https://$DOMAIN
+```
 
-https://github.com/1N3/BlackWidow
+View the output:
 
-https://github.com/edoardottt/cariddi
+```bash
+firefox nikto-scan
+```
 
-NucleiFuzzer
+### Nuclei
 
-Nuclei
+[https://github.com/projectdiscovery/nuclei](https://github.com/projectdiscovery/nuclei)
 
-nikto
+```bash
+export DOMAIN = "example.com"
+```
+
+Run a simple nuclei scan:
+
+```bash
+nuclei -target $DOMAIN -o nuclei-scan
+```
+
+### NucleiFuzzer
+
+[https://github.com/0xKayala/NucleiFuzzer](https://github.com/0xKayala/NucleiFuzzer)
+
+```bash
+git clone https://github.com/0xKayala/NucleiFuzzer.git
+cd NucleiFuzzer
+sudo chmod +x install.sh
+./install.sh
+```
+
+```bash
+export DOMAIN = "example.com"
+```
+
+Run NucleiFuzzer on a single domain:
+
+```bash
+sudo nf -d $DOMAIN
+```
+
+Run NucleiFuzzer on multiple domains:
+
+```bash
+sudo nf -f <domain_list>
+```
+
+View the output:
+
+```bash
+mv output nuclei-fuzzer-scan && cd nuclei-fuzzer-scan
+```
 
 ## Source
-Original note: `_raw/Auto scanners.md`
+Original notes:
+- `_raw/Auto scanners.md`
+- `_raw/Auto scanners/nikto.md`
+- `_raw/Auto scanners/Nuclei.md`
+- `_raw/Auto scanners/NucleiFuzzer.md`

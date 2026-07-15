@@ -22,8 +22,6 @@ review_status: imported-unreviewed
 
 # cmsmap
 
-Verantwortliche/r: Max Randhahn
-
 [https://github.com/dionach/CMSmap](https://github.com/dionach/CMSmap)
 
 ```bash

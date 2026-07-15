@@ -28,8 +28,6 @@ review_status: imported-unreviewed
 
 # SOAP
 
-Verantwortliche/r: Max Randhahn
-
 - SOAP messages towards a SOAP service should include both the operation and the related parameters
 - This operation resides in the first child element of the SOAP message's body
 - If HTTP is the transport of choice, it is allowed to use an additional HTTP header called SOAPAction, which contains the operation's name

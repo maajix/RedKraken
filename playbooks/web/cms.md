@@ -21,8 +21,6 @@ review_status: imported-unreviewed
 
 # CMS
 
-Verantwortliche/r: Max Randhahn
-
 cmsmap
 
 Joomla

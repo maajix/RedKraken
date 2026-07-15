@@ -21,8 +21,6 @@ review_status: imported-unreviewed
 
 # kiterunner
 
-Verantwortliche/r: Max Randhahn
-
 [https://github.com/assetnote/kiterunner](https://github.com/assetnote/kiterunner)
 
 ## Source

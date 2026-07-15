@@ -1,6 +1,5 @@
 # Auto scanners
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 # Scanners

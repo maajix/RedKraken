@@ -1,6 +1,5 @@
 # NucleiFuzzer
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [https://github.com/0xKayala/NucleiFuzzer](https://github.com/0xKayala/NucleiFuzzer)

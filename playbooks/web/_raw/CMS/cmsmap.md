@@ -1,6 +1,5 @@
 # cmsmap
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [https://github.com/dionach/CMSmap](https://github.com/dionach/CMSmap)

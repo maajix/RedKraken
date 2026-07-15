@@ -1,6 +1,5 @@
 # SOAP
 
-Verantwortliche/r: Max Randhahn
 Status: In Bearbeitung
 
 - SOAP messages towards a SOAP service should include both the operation and the related parameters

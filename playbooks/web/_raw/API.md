@@ -1,6 +1,5 @@
 # API
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [SOAP](API/SOAP%20ed7c685802db45e591d61d8c7b63c1b1.md)

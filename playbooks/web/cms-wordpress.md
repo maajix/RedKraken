@@ -26,8 +26,6 @@ review_status: imported-unreviewed
 
 # Wordpress
 
-Verantwortliche/r: Max Randhahn
-
 [https://github.com/wpscanteam/wpscan](https://github.com/wpscanteam/wpscan)
 
 [Wordpress](https://kathan19.gitbook.io/howtohunt/cms/wordpress)

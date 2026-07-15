@@ -21,13 +21,12 @@ done < <(find "$RAW" -type f -name '*.md' -print0)
 
 pb=$(find "$WEB" -maxdepth 1 -type f -name '*.md' ! -name '_*' | wc -l)
 rows=$(tail -n +2 "$SRC" | wc -l)
-duplicate_slugs=$(tail -n +2 "$SRC" | cut -f1 | sort | uniq -d | wc -l)
+distinct=$(tail -n +2 "$SRC" | cut -f1 | sort -u | wc -l)
 duplicate_raw=$(tail -n +2 "$SRC" | cut -f2 | sort | uniq -d | wc -l)
 echo "raw_notes=$total  manifest_rows=$rows  playbooks=$pb  unmapped=$unmapped"
 [ "$unmapped" -eq 0 ]   || { echo "FAIL: $unmapped raw note(s) not in manifest — coverage gap."; exit 1; }
 [ "$total" -eq "$rows" ] || { echo "FAIL: $total raw notes vs $rows manifest rows — mismatch."; exit 1; }
-[ "$pb" -eq "$rows" ] || { echo "FAIL: $pb curated playbooks vs $rows manifest rows — mismatch."; exit 1; }
-[ "$duplicate_slugs" -eq 0 ] || { echo "FAIL: $duplicate_slugs duplicate slug(s) in manifest."; exit 1; }
+[ "$pb" -eq "$distinct" ] || { echo "FAIL: $pb curated playbooks vs $distinct distinct slugs — mismatch."; exit 1; }
 [ "$duplicate_raw" -eq 0 ] || { echo "FAIL: $duplicate_raw duplicate raw path(s) in manifest."; exit 1; }
 while IFS=$'\t' read -r slug _; do
   [ "$slug" = slug ] && continue

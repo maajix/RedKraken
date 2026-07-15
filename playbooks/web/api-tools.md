@@ -21,8 +21,6 @@ review_status: imported-unreviewed
 
 # Tools
 
-Verantwortliche/r: Max Randhahn
-
 kiterunner
 
 https://github.com/cosad3s/postleaks?tab=readme-ov-file

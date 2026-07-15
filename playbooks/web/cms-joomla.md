@@ -22,8 +22,6 @@ review_status: imported-unreviewed
 
 # Joomla
 
-Verantwortliche/r: Max Randhahn
-
 [Joomla](https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/joomla)
 
 [joomscan | Kali Linux Tools](https://www.kali.org/tools/joomscan/)

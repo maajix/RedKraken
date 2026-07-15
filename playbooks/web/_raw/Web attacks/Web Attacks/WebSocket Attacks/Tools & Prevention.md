@@ -11,7 +11,7 @@ Afterward, we have to make the binary executable and run it:
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ chmod +x websocat_max.x86_64-unknown-linux-muslmaxrandhahn@htb[/htb]$ ./websocat_max.x86_64-unknown-linux-musl -hwebsocat 1.11.0
+htb-student@htb[/htb]$ chmod +x websocat_max.x86_64-unknown-linux-muslhtb-student@htb[/htb]$ ./websocat_max.x86_64-unknown-linux-musl -hwebsocat 1.11.0
 Vitaly "_Vi" Shukela <vi0oss@gmail.com>
 Command-line client for web sockets, like netcat/curl/socat for ws://.
 
@@ -28,7 +28,7 @@ We can specify a WebSocket URL for the tool to connect to:
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ ./websocat_max.x86_64-unknown-linux-musl ws://172.17.0.2/echoHello EchoServer!
+htb-student@htb[/htb]$ ./websocat_max.x86_64-unknown-linux-musl ws://172.17.0.2/echoHello EchoServer!
 Hello EchoServer!
 
 ```
@@ -48,7 +48,7 @@ To use the `fingerprinting` module, we change directories to `fingerprint` a
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ pip3 install -r requirements.txt
+htb-student@htb[/htb]$ pip3 install -r requirements.txt
 ```
 
 Subsequently, we can run the tool using Python:
@@ -56,7 +56,7 @@ Subsequently, we can run the tool using Python:
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ python3 STEWS-fingerprint.py -husage: STEWS-fingerprint.py [-h] [-v] [-d] [-u URL] [-f FILE] [-n] [-k] [-o ORIGIN] [-g] [-a] [-1] [-2] [-3] [-4] [-5] [-6] [-7]
+htb-student@htb[/htb]$ python3 STEWS-fingerprint.py -husage: STEWS-fingerprint.py [-h] [-v] [-d] [-u URL] [-f FILE] [-n] [-k] [-o ORIGIN] [-g] [-a] [-1] [-2] [-3] [-4] [-5] [-6] [-7]
 
 Security Testing and Enumeration of WebSockets (STEWS) Fingerprinting Tool
 
@@ -90,7 +90,7 @@ As an example, let us run the tool's series `5` tests on the CSWH lab from the
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ python3 STEWS-fingerprint.py -u websockets.htb/messages -n -5=======================================================
+htb-student@htb[/htb]$ python3 STEWS-fingerprint.py -u websockets.htb/messages -n -5=======================================================
 Identifying...
 =======================================================
 List of deltas between detected fingerprint and those in database
@@ -114,7 +114,7 @@ However, the actual WebSocket implementation belongs to the `flask_sock` Pytho
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ python3 STEWS-fingerprint.py -u websockets.htb/messages -n -4=======================================================
+htb-student@htb[/htb]$ python3 STEWS-fingerprint.py -u websockets.htb/messages -n -4=======================================================
 Identifying...
 =======================================================
 List of deltas between detected fingerprint and those in database
@@ -138,7 +138,7 @@ Similar to the `fingerprinting` module, we need to install the dependencies fo
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ python3 STEWS-vuln-detect.py -husage: STEWS-vuln-detect.py [-h] [-v] [-d] [-u URL] [-f FILE] [-n] [-k] [-o ORIGIN] [-1] [-2] [-3] [-4]
+htb-student@htb[/htb]$ python3 STEWS-vuln-detect.py -husage: STEWS-vuln-detect.py [-h] [-v] [-d] [-u URL] [-f FILE] [-n] [-k] [-o ORIGIN] [-1] [-2] [-3] [-4]
 
 Security Testing and Enumeration of WebSockets (STEWS) Vulnerability Detection Tool
 
@@ -164,7 +164,7 @@ Again, we will use `STEWS` on the CSWH lab from the previous section to check 
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ python3 STEWS-vuln-detect.py -n -u websockets.htb/messages -1   Testing ws://websockets.htb/messages
+htb-student@htb[/htb]$ python3 STEWS-vuln-detect.py -n -u websockets.htb/messages -1   Testing ws://websockets.htb/messages
 >>>Note: ws://websockets.htb/messages allowed http or https for origin
 >>>Note: ws://websockets.htb/messages allowed null origin
 >>>Note: ws://websockets.htb/messages allowed unusual char (possible parse error)
@@ -180,7 +180,7 @@ As we can see from the output, `STEWS` correctly identified the CSWH vulnerabi
 WebSocket Attacks: Tools & Prevention
 
 ```
-maxrandhahn@htb[/htb]$ python3 STEWS-vuln-detect.py -n -u websockets.htb/messages -1 -d<SNIP>
+htb-student@htb[/htb]$ python3 STEWS-vuln-detect.py -n -u websockets.htb/messages -1 -d<SNIP>
 -----------START-----------
 GET http://websockets.htb/messages
 Upgrade: websocket

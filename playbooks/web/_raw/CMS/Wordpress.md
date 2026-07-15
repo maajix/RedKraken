@@ -1,6 +1,5 @@
 # Wordpress
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [https://github.com/wpscanteam/wpscan](https://github.com/wpscanteam/wpscan)

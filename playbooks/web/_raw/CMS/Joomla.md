@@ -1,6 +1,5 @@
 # Joomla
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [Joomla](https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/joomla)

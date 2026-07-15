@@ -1,6 +1,5 @@
 # nikto
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 ```bash

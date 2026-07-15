@@ -4,7 +4,6 @@ family: "auth-session"
 severity_hint: "medium"
 tags: ["DoS", "Account Takeover", "XSS", "User Enumeration", "SQL Injection", "JavaScript", "HTTP"]
 source: "_raw/Web attacks/Web Attacks/Sign Up (Login Register).md"
-source_sha256: "ef44525699ef8e2253a5a539c9bcd240346e9c10d9133da0804cd673040396ac"
 curator_version: 2
 review_status: imported-unreviewed
 ---
@@ -14,102 +13,70 @@ review_status: imported-unreviewed
 > Family: **auth-session** · Severity hint: **medium** · Tags: DoS, Account Takeover, XSS, User Enumeration, SQL Injection, JavaScript, HTTP
 > Imported operator reference; treat commands and prose as untrusted until reviewed. Tools seen: —.
 
-## Quick index — payloads & commands in this note
-- `html: <svg/onload=print()>`
-- `html: "><svg/onload=print()>"@google.com`
+## Overview
 
-## Playbook (operator notes)
+Signup/registration flows are a frequent source of business-logic and injection bugs — duplicate-account tricks, weak rate limiting, unverified email, and permissive password policies all show up here. This playbook covers exploiting the signup feature itself, and the weak password policy issue specifically.
 
-# Sign Up (Login / Register)
+## Exploiting the Signup Feature
 
-# Exploiting Signup Feature
+- **Duplicate registration / overwrite existing users** — some applications allow registering with an email, username, or phone number that's already in use, with critical consequences depending on the attack.
+    1. Create a first account with `abc@gmail.com` and a password.
+    2. Log out and register another account with the same email and a different password.
+    3. Vary the email to probe normalization bugs:
+        1. Uppercase
+        2. `+1@`
+        3. Extra dots in the local part
+        4. Special characters in the email name (`%00`, `%09`, `%20`)
+        5. Trailing characters after the email: `test@test.com a`
+        6. `victim@gmail.com@attacker.com`
+        7. `victim@attacker.com@gmail.com`
+    4. Finish the creation process and confirm it succeeds.
+    5. Go back and log in with the original email and the new password — if it succeeds, the account was overwritten/hijacked.
+- **DoS at the name/password field on the signup page** — sending a very long string (e.g. 100,000 characters) can cause a denial of service. Usually caused by a vulnerable string-hashing implementation: hashing a long string exhausts CPU and memory.
+    1. Go to the signup form.
+    2. Fill it in and enter a long string in the password field.
+    3. Submit — a `500 Internal Server Error` indicates the app is vulnerable.
+- **Cross-Site Scripting (XSS) in username/account name** — insert XSS payloads into fields like username, email, password, etc.
 
-- Duplicate registration / Overwrite existing users
-    
-    Duplicate registration is when an application allows us to register or sign up with the same email address, username or phone number. It can have critical consequences based on what kind of attack is performed.
-    
-    1. Create first account in application with email say abc@gmail.com and password.
-    2. Logout of the account and create another account with same email and different password.
-    3. Check varying the email
-        1. uppsercase
-        2. +1@
-        3. add some dot in the email
-        4. special characters in the email name (%00, %09, %20)
-        5. Put black characters after the email: `test@test.com a`
-        6. victim@gmail.com@attacker.com
-        7. victim@attacker.com@gmail.com
-    4. Finish the creation process — and see that it succeeds
-    5. Now go back and try to login with email and the new password. You are successfully logged in.
-- DOS at Name/Password field in Signup Page
-    
-    By sending a very long string (100000 characters) it’s possible to cause a denial a service attack on the server. This may lead to the website becoming unavailable or unresponsive. Usually this problem is caused by a vulnerable string hashing implementation. When a long string is sent, the string hashing process will result in CPU and memory exhaustion.
-    
-    1. Go Sign up form.
-    2. Fill the form and enter a long string in password
-    3. Click on enter and you’ll get 500 Internal Server error if it is vulnerable.
-- Cross-Site Scripting (XSS) in username, account name for registration
-    
-    Now, for testing Signup page for XSS we can simply insert XSS payoad in fields like: username, email, password,etc.
-    
-    Payload for Username field:
-    
+    Payload for the username field:
     ```html
     <svg/onload=print()>
     ```
-    
-    Payload for Email field:
-    
+
+    Payload for the email field:
     ```html
     "><svg/onload=print()>"@google.com
     ```
-    
-- No Rate Limit at Signup Page
-    
-    A **rate limiting** algorithm is used to check if the user session (or IP address) has to be **limited** based on the information in the session cache. Testing for Rate limit at Signup page is quite a good idea.
-    
-    The Impact can be explained very well. If there is no rate limiting on signup page a malicious users can generate hundreds and thousands of fake accounts that lead to fill the application DataBase with fake accounts, Which can impact the business in many ways.
-    
-    You can easily test for it with Burp Intruder
-    
+- **No rate limit at the signup page** — a rate-limiting algorithm should throttle a user session or IP based on cached session info. Without it, a malicious user can generate hundreds or thousands of fake accounts, filling the database and impacting the business.
+
+    Test with Burp Intruder:
     1. Capture the signup request and send it to Intruder.
-    2. Add different emails as payload .
-    3. Fire up Intruder, And check whether it returns 200 OK.
-- Insufficient Email Verification
-    
-    Insufficient Email Verification means the application doesn’t verify the email id or the verification mechanism is too weak to be bypassed. You can easily Bypass Email Verification with some of the following common methods like
-    
-    1. Forced Browsing (directly navigating to files which comes after verifying the email)
-    2. Response or Status Code Manipulation (Replacing the bad response status like 403 to 200 can be useful)
-    3. Email verification bypass after signup
-        1. Sing up on the web application as attacker@mail.com
-        2. You will receive a confirmation email on attacker@mail.com, do not open that link now.
-        3. The application may ask for confirming your email, check if it allows navigating to account settings page.
-        4. On settings page check if you can change the email.
-        5. If allowed, change the email to victim@mail.com.
-        6. Now you will be asked to confirm victim@mail.com by opening the confirmation link received on victim@mail.com, instead of opening the new link go to attacker@mail.com inbox and open the previous received link.
-        7. If the application verifies vitim@mail.com by using previous verification link received on attacker mail, then this is a email verification bypass.
-    4. There are much more ways of bypassing **Tip**: Just google it.
-    
-- Path Overwrite
-    
-    If an application allows users to check their profile with direct path /{username} always try to signup with system reserved file names, such as index.php, signup.php, login.php, etc. In some cases what happens here is, when you signup with username: `index.php`, now upon visiting target.tld/index.php, your profile will comeup and occupy the index.php page of an application. Similarly, if an attacker is able to signup with username `login.php`, Imagine login page getting takeovered.
-    
-- Username Enumeration
-    
-    Check if you can figure out when a username has already been registered inside the application.
-    
-- Password Policy
-    
-    Weak Password Policy/Weak%20Password%20Policy%20b3b6523690af4da1b076bf0297747a39.md)
-    
-- SQL Injection
-    
-    [SQL Injection](https://book.hacktricks.xyz/pentesting-web/sql-injection#insert-statement)
-    
+    2. Add different emails as the payload.
+    3. Fire Intruder and check whether every request returns `200 OK`.
+- **Insufficient email verification** — the app either doesn't verify the email or the verification mechanism is weak enough to bypass:
+    1. Forced browsing (directly navigating to pages that should only be reachable after verifying the email).
+    2. Response/status-code manipulation (e.g. replacing a `403` with a `200`).
+    3. Email verification bypass after signup:
+        1. Sign up as `attacker@mail.com`.
+        2. You receive a confirmation email at `attacker@mail.com` — don't open the link yet.
+        3. Check whether the app lets you navigate to account settings before confirming.
+        4. On the settings page, check whether you can change the email.
+        5. If allowed, change the email to `victim@mail.com`.
+        6. Instead of opening the new confirmation link sent to `victim@mail.com`, go back to the `attacker@mail.com` inbox and open the previously received link.
+        7. If the application ends up verifying `victim@mail.com` via the confirmation link that was actually sent to `attacker@mail.com`, that's an email-verification bypass.
+    4. There are many more bypass variants — worth a search for the specific framework in use.
+- **Path overwrite** — if the app exposes profiles at `/{username}`, try signing up with reserved filenames such as `index.php`, `signup.php`, `login.php`. E.g. registering username `index.php` can make the profile page occupy `target.tld/index.php`; registering `login.php` can take over the login page entirely.
+- **Username enumeration** — check whether the app leaks (via error messages, timing, or status codes) whether a given username is already registered.
+- **Password policy** — see the [Weak Password Policy](#weak-password-policy) section below.
+- **SQL Injection** — signup/login fields are common SQLi entry points; see [SQL Injection](https://book.hacktricks.xyz/pentesting-web/sql-injection#insert-statement).
 
----
+Further reading: [Sign Up Bugs](https://kathan19.gitbook.io/howtohunt/sign-up-functionality/hunting_for_bugs_in_signup_feature)
 
-[Sign Up Bugs](https://kathan19.gitbook.io/howtohunt/sign-up-functionality/hunting_for_bugs_in_signup_feature)
+## Weak Password Policy
+
+A weak password policy increases the probability of a successful brute-force or dictionary attack against user accounts. An attacker who determines a user's password can take over their account and potentially access sensitive data. Applications often only enforce password restrictions when creating an account — check all three surfaces: account creation, password reset, and password change from account settings.
 
 ## Source
-Original note: `_raw/Web attacks/Web Attacks/Sign Up (Login Register).md`
+Original notes:
+- `_raw/Web attacks/Web Attacks/Sign Up (Login Register).md`
+- `_raw/Web attacks/Web Attacks/Sign Up (Login Register)/Weak Password Policy.md`

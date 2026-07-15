@@ -25,8 +25,6 @@ review_status: imported-unreviewed
 
 # AWS Cognito
 
-Verantwortliche/r: Max Randhahn
-
 [GitHub - padok-team/cognito-scanner: A simple script which implements different Cognito attacks such as Account Oracle or Priviledge Escalation](https://github.com/padok-team/cognito-scanner)
 
 [AWS Cognito pentest methodology | Padok Security](https://security.padok.fr/en/blog/aws-cognito-pentest)

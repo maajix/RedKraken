@@ -22,8 +22,6 @@ review_status: imported-unreviewed
 
 # GraphQL
 
-Verantwortliche/r: Max Randhahn
-
 https://t.co/cyW7DYJaHS
 
 - Check if Introspection is enabled

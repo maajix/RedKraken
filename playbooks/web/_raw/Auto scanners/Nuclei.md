@@ -1,6 +1,5 @@
 # Nuclei
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [https://github.com/projectdiscovery/nuclei](https://github.com/projectdiscovery/nuclei)

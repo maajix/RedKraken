@@ -21,8 +21,6 @@ review_status: imported-unreviewed
 
 # Cloud
 
-Verantwortliche/r: Max Randhahn
-
 AWS Cognito
 
 ## Source

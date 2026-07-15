@@ -1,6 +1,5 @@
 # Drupal
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [Drupal](https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/drupal)

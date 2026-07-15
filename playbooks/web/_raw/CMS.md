@@ -1,6 +1,5 @@
 # CMS
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [cmsmap](CMS/cmsmap%20a62996e5d7a341e7adcd37202ee23498.md)

@@ -1,6 +1,5 @@
 # Web attacks
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 [Web Attacks](Web%20attacks/Web%20Attacks%2027f2c37daa2980fd9fd3d9d149b5c3b3.csv)

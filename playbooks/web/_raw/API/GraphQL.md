@@ -1,6 +1,5 @@
 # GraphQL
 
-Verantwortliche/r: Max Randhahn
 Status: Nicht begonnen
 
 https://t.co/cyW7DYJaHS

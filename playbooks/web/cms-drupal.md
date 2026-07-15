@@ -22,8 +22,6 @@ review_status: imported-unreviewed
 
 # Drupal
 
-Verantwortliche/r: Max Randhahn
-
 [Drupal](https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/drupal)
 
 [https://github.com/SamJoan/droopescan](https://github.com/SamJoan/droopescan)

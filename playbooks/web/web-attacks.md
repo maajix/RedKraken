@@ -21,8 +21,6 @@ review_status: imported-unreviewed
 
 # Web attacks
 
-Verantwortliche/r: Max Randhahn
-
 Web Attacks
 
 ---

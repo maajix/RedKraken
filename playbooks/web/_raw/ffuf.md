@@ -1,6 +1,5 @@
 # ffuf
 
-Verantwortliche/r: Max Randhahn
 Status: Erledigt
 
 # Header Brute-Forcing

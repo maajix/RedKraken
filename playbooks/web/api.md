@@ -21,8 +21,6 @@ review_status: imported-unreviewed
 
 # API
 
-Verantwortliche/r: Max Randhahn
-
 SOAP
 
 REST

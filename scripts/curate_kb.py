@@ -9,6 +9,12 @@ For each source note (excluding the Tags/ taxonomy):
 
 Lossless: every code block is kept; the verbatim original is always in _raw/.
 Run:  python3 scripts/curate_kb.py [SRC_DIR] [DEST_DIR]
+
+WARNING: this WIPES and fully regenerates DEST_DIR (_raw/, every curated *.md,
+_catalog.md, _sources.tsv) from SRC_DIR. Any manual curation done directly in
+DEST_DIR (merged playbooks, catalog edits, privacy scrubs) will be destroyed
+without confirmation. Do not re-run against playbooks/web/ after manual
+curation has started; the original SRC (Notion export) is no longer on disk.
 """
 import csv
 import hashlib

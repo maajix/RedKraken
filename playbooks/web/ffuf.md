@@ -24,8 +24,6 @@ review_status: imported-unreviewed
 
 # ffuf
 
-Verantwortliche/r: Max Randhahn
-
 # Header Brute-Forcing
 
 ```bash
