@@ -1,16 +1,70 @@
-# Web Pentest Harness
+<p align="center">
+  <img src="assets/cover.png" alt="RedKraken — Penetration-Testing Agent Harness" width="100%">
+</p>
 
-An agent-oriented harness for authorized web application and source-code security
-assessments. It combines deny-by-default scope enforcement, immutable run context,
-structured findings/evidence, deterministic reporting, and a reviewed playbook
-layer over a larger imported technique library.
+<h1 align="center">RedKraken</h1>
+<p align="center"><b>Penetration-Testing Agent Harness</b></p>
 
-> Authorized testing only. A scope file is an enforcement input, not evidence of
-> permission. Use a written authorization and test only its named systems.
+<p align="center">
+  <a href="https://github.com/maajix/RedKraken/commits/main"><img src="https://img.shields.io/github/last-commit/maajix/RedKraken" alt="Last commit"></a>
+  <a href="https://github.com/maajix/RedKraken/issues"><img src="https://img.shields.io/github/issues/maajix/RedKraken" alt="Open issues"></a>
+  <img src="https://img.shields.io/badge/built%20for-Claude%20Code-blueviolet" alt="Built for Claude Code">
+  <img src="https://img.shields.io/badge/scope-deny--by--default-critical" alt="Deny-by-default scope">
+</p>
+
+RedKraken is an agent-oriented harness for **authorized** web application and
+source-code security assessments. It drives Claude Code through a closed
+recon → hunt → exploit → report loop (and a separate map → audit → confirm →
+report loop for whitebox code review), backed by deny-by-default scope
+enforcement, immutable run context, structured findings/evidence, deterministic
+reporting, and a reviewed playbook layer over a larger imported technique
+library.
+
+> [!WARNING]
+> **Authorized testing only.** A scope file is an enforcement input, not proof
+> of permission. Only point RedKraken at systems you have written authorization
+> to test, and only at the systems that authorization actually names.
+
+## Table of contents
+
+- [Why RedKraken](#why-redkraken)
+- [Quick start](#quick-start)
+- [Enforcement model](#enforcement-model)
+- [Browser and API workflows](#browser-and-api-workflows)
+- [State and evidence](#state-and-evidence)
+- [Knowledge base](#knowledge-base)
+- [Open-source toolchain](#open-source-toolchain)
+- [Repo layout](#repo-layout)
+- [Tests](#tests)
+- [License](#license)
+
+## Why RedKraken
+
+- **Deny-by-default scope.** Targets and out-of-scope hosts are parsed strictly
+  from an engagement file; nothing is in scope unless it's explicitly named.
+- **Enforced, not just documented.** A pre-tool-call hook and an HTTP scope
+  proxy back the policy up at runtime, not only in agent instructions.
+- **Immutable run context.** Every run is fingerprinted against the engagement,
+  source tree/ref, and tool paths; a changed fingerprint fails closed
+  (`STALE_RUN_CONTEXT`) instead of silently mixing state.
+- **Evidence-backed findings.** Confirmed findings require evidence; exploited
+  findings require concrete impact. Reporting is a deterministic render of
+  `findings.jsonl`, not free-form narrative.
+- **Two loops, one harness.** Black-box web pentesting (`/pentest`) and
+  whitebox source-code auditing (`/audit`) share the same scope, evidence, and
+  reporting machinery, and can cross-inform each other when both a source path
+  and a live target are in scope.
+- **Reviewed + imported knowledge.** A source-reviewed `playbooks/modern/`
+  layer covers current attack classes with provenance; a larger imported
+  `playbooks/web/` library fills in breadth, clearly labeled as untrusted,
+  unreviewed technique notes.
 
 ## Quick start
 
 ```bash
+git clone https://github.com/maajix/RedKraken.git
+cd RedKraken
+
 # Report installed, missing, and broken tools. Installation is always explicit.
 bash lib/preflight.sh
 bash lib/preflight.sh --install
@@ -161,7 +215,7 @@ OWASP ZAP, Schemathesis, grpcurl, RESTler, ProjectDiscovery tools, OSV-Scanner,
 Trivy, Opengrep, and Gitleaks. Missing or broken optional tools produce coverage
 gaps; they are never silently treated as successful coverage.
 
-## Layout
+## Repo layout
 
 ```text
 .claude/          agents, skills, commands, policy/audit hooks
@@ -176,7 +230,7 @@ schemas/          finding JSON schema
 tests/            existing harness checks
 ```
 
-## Existing checks
+## Tests
 
 No generated attack result is trusted without manual confirmation. Harness-level
 checks can be run with:
@@ -188,3 +242,9 @@ bash tests/test_audit_smoke.sh
 bash scripts/check_coverage.sh
 bash tests/test_modern_coverage.sh
 ```
+
+## License
+
+No license file is currently included. Until one is added, treat this
+repository as all-rights-reserved — open an issue if you need explicit reuse
+terms.
