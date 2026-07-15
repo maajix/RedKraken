@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "baselines": [
+    {
+      "id": "owasp-top10-2025",
+      "status": "stable",
+      "source": "https://owasp.org/Top10/2025/0x00_2025-Introduction/",
+      "required_controls": ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10"],
+      "controls": {
+        "A01": {"name": "Broken Access Control", "playbooks": ["api-stateful-business-logic.md", "framework-routing-trust-boundaries.md", "identity-provisioning-role-lifecycle.md"]},
+        "A02": {"name": "Security Misconfiguration", "playbooks": ["deployment-configuration-exposure.md", "browser-policy-framing.md", "information-disclosure-debug-artifacts.md"]},
+        "A03": {"name": "Software Supply Chain Failures", "playbooks": ["software-supply-chain-integrity.md"]},
+        "A04": {"name": "Cryptographic Failures", "playbooks": ["secrets-cryptographic-controls.md"]},
+        "A05": {"name": "Injection", "playbooks": ["ssti-error-oracles.md", "nosql-operator-injection.md", "spreadsheet-formula-injection.md", "structured-interpreter-injection.md"]},
+        "A06": {"name": "Insecure Design", "playbooks": ["api-stateful-business-logic.md", "race-conditions-state-machines.md", "exceptional-condition-security.md"]},
+        "A07": {"name": "Authentication Failures", "playbooks": ["authentication-mfa-recovery-lifecycle.md", "oauth-security-bcp.md", "webauthn-passkeys.md"]},
+        "A08": {"name": "Software or Data Integrity Failures", "playbooks": ["software-supply-chain-integrity.md", "untrusted-data-deserialization.md", "webhook-event-authenticity.md"]},
+        "A09": {"name": "Security Logging and Alerting Failures", "playbooks": ["security-logging-alerting.md"]},
+        "A10": {"name": "Mishandling of Exceptional Conditions", "playbooks": ["exceptional-condition-security.md"]}
+      }
+    },
+    {
+      "id": "owasp-api-security-2023",
+      "status": "stable",
+      "source": "https://owasp.org/API-Security/editions/2023/en/0x11-t10/",
+      "required_controls": ["API1", "API2", "API3", "API4", "API5", "API6", "API7", "API8", "API9", "API10"],
+      "controls": {
+        "API1": {"name": "Broken Object Level Authorization", "playbooks": ["api-stateful-business-logic.md"]},
+        "API2": {"name": "Broken Authentication", "playbooks": ["authentication-mfa-recovery-lifecycle.md", "oauth-security-bcp.md"]},
+        "API3": {"name": "Broken Object Property Level Authorization", "playbooks": ["api-stateful-business-logic.md", "orm-relational-filter-leaks.md"]},
+        "API4": {"name": "Unrestricted Resource Consumption", "playbooks": ["api-inventory-resource-consumption.md", "graphql-authorization-cost.md"]},
+        "API5": {"name": "Broken Function Level Authorization", "playbooks": ["api-stateful-business-logic.md", "framework-routing-trust-boundaries.md"]},
+        "API6": {"name": "Unrestricted Access to Sensitive Business Flows", "playbooks": ["api-stateful-business-logic.md", "race-conditions-state-machines.md"]},
+        "API7": {"name": "Server Side Request Forgery", "playbooks": ["url-parser-ssrf-routing.md"]},
+        "API8": {"name": "Security Misconfiguration", "playbooks": ["deployment-configuration-exposure.md", "browser-policy-framing.md"]},
+        "API9": {"name": "Improper Inventory Management", "playbooks": ["api-inventory-resource-consumption.md"]},
+        "API10": {"name": "Unsafe Consumption of APIs", "playbooks": ["api-inventory-resource-consumption.md", "webhook-event-authenticity.md", "url-parser-ssrf-routing.md"]}
+      }
+    },
+    {
+      "id": "owasp-wstg-v42-domains",
+      "status": "stable",
+      "source": "https://owasp.org/www-project-web-security-testing-guide/v42/",
+      "required_controls": ["INFO", "CONF", "IDNT", "ATHN", "ATHZ", "SESS", "INPV", "ERRH", "CRYP", "BUSL", "CLNT", "APIT"],
+      "controls": {
+        "INFO": {"name": "Information Gathering", "playbooks": ["information-disclosure-debug-artifacts.md", "framework-routing-trust-boundaries.md"]},
+        "CONF": {"name": "Configuration and Deployment Management", "playbooks": ["deployment-configuration-exposure.md", "browser-policy-framing.md"]},
+        "IDNT": {"name": "Identity Management", "playbooks": ["identity-parser-differentials.md", "identity-provisioning-role-lifecycle.md", "cms-extension-platform-boundaries.md"]},
+        "ATHN": {"name": "Authentication", "playbooks": ["authentication-mfa-recovery-lifecycle.md", "oauth-security-bcp.md", "webauthn-passkeys.md"]},
+        "ATHZ": {"name": "Authorization", "playbooks": ["api-stateful-business-logic.md", "graphql-authorization-cost.md", "grpc-streaming-authorization.md"]},
+        "SESS": {"name": "Session Management", "playbooks": ["authentication-mfa-recovery-lifecycle.md", "cookie-parser-differentials.md"]},
+        "INPV": {"name": "Input Validation", "playbooks": ["nosql-operator-injection.md", "ssti-error-oracles.md", "spreadsheet-formula-injection.md", "structured-interpreter-injection.md", "untrusted-data-deserialization.md"]},
+        "ERRH": {"name": "Error Handling", "playbooks": ["exceptional-condition-security.md", "information-disclosure-debug-artifacts.md"]},
+        "CRYP": {"name": "Weak Cryptography", "playbooks": ["secrets-cryptographic-controls.md"]},
+        "BUSL": {"name": "Business Logic", "playbooks": ["api-stateful-business-logic.md", "race-conditions-state-machines.md", "webhook-event-authenticity.md"]},
+        "CLNT": {"name": "Client-side", "playbooks": ["browser-messaging-dom-clobbering.md", "browser-policy-framing.md", "browser-realtime-xsleaks.md", "browser-storage-client-templates.md", "client-side-path-traversal.md"]},
+        "APIT": {"name": "API Testing", "playbooks": ["api-inventory-resource-consumption.md", "api-stateful-business-logic.md", "graphql-authorization-cost.md", "grpc-streaming-authorization.md"]}
+      }
+    }
+  ]
+}

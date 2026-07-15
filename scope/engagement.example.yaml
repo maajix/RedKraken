@@ -1,0 +1,59 @@
+# Engagement scope & rules-of-engagement (RoE).
+# Copy to engagements/<name>/engagement.yaml and edit BEFORE running /pentest.
+# The scope gate (lib/scope_check.sh + PreToolUse hook) reads `targets` and
+# `out_of_scope` from this file. No targets parsed => everything is DENIED.
+
+name: example-client                 # short slug for the engagement
+
+# ---- SCOPE (authoritative; deny-by-default) ----
+targets:                             # host is in scope iff it matches >=1 of these
+  - app.example.com                  # exact host
+  - "*.example.com"                  # subdomains of example.com (NOT the apex; list it separately)
+  - 10.10.20.0/24                    # CIDR (IPv4)
+out_of_scope:                        # any match here DENIES, even if also in targets
+  - admin.example.com
+  - mail.example.com
+
+# ---- WHITEBOX / CODE AUDIT (used by /audit; targets above is OPTIONAL here) ----
+source_path:                         # path or git URL to the code under audit, e.g. ./src (blank => /audit stops and asks)
+source_ref:                          # optional git ref/commit — enables diff / n-day mode
+audit_include: []                    # optional path globs to focus the audit
+audit_exclude:                       # paths never audited
+  - node_modules
+  - vendor
+  - dist
+  - .git
+# NOTE: if BOTH source_path and an in-scope target are set, the grey-box bridge
+# uses confirmed source findings to guide/confirm the live /pentest run.
+
+# ---- INTENT (required; if missing/ambiguous the loop STOPS and asks you) ----
+intent: >
+  Black-box web application assessment of the customer portal. Identify and
+  prove OWASP-class web vulnerabilities. Authorized by signed SoW #2026-014.
+objectives:                          # optional, focuses triage
+  - account takeover
+  - authz / IDOR
+  - injection (SQLi/SSTI/cmd)
+
+# ---- RULES OF ENGAGEMENT ----
+destructive_allowed: false           # gate for irreversible actions (DROP/DELETE/writes/DoS-style fuzzing).
+                                     # false => prove non-destructively or record "exploitable, not detonated".
+rate_limit_enabled: false            # opt-in only: no throttling is applied unless explicitly true
+rate_limit:
+  requests_per_second: 10            # global default when enabled (integer or decimal)
+  burst: 10                          # token-bucket capacity
+  max_concurrency: 4                 # concurrent requests through the scope proxy
+  per_tool:                          # optional overrides; start proxy with matching tool name
+    schemathesis:
+      requests_per_second: 2
+      burst: 2
+      max_concurrency: 1
+max_threads: 20                      # legacy tool hint; not a rate limit by itself
+time_window: "any"                   # e.g. "2026-07-01T09:00/2026-07-01T17:00" or "any"
+
+# ---- HELPERS (optional) ----
+oob_host: ""                         # your out-of-band/collaborator host for blind SSRF/XXE/SQLi callbacks
+test_credentials:                    # provided low-priv creds, if any (kept in engagement dir, gitignored)
+  - "user@example.com:Password123"
+notes: >
+  Staging only. Do not touch *.prod.example.com. WAF: Cloudflare.

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.web-pentest-harness/schemas/finding-v1.schema.json",
+  "title": "Web Pentest Harness Finding v1",
+  "type": "object",
+  "required": ["schema_version", "id", "technique", "family", "severity", "status", "summary", "source", "evidence", "repro", "ts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "technique": {"type": "string", "minLength": 1},
+    "family": {"type": "string", "minLength": 1},
+    "severity": {"enum": ["critical", "high", "medium", "low", "info"]},
+    "status": {"enum": ["suspected", "confirmed", "exploited", "exploitable-not-detonated", "not-exploitable", "not-tested"]},
+    "status_reason": {"type": "string"},
+    "summary": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "endpoint": {"type": "string"},
+    "method": {"type": "string"},
+    "param": {"type": "string"},
+    "file": {"type": "string"},
+    "line": {"type": "integer", "minimum": 1},
+    "component": {"type": "string"},
+    "cwe": {"type": "string"},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "dataflow": {"type": "array", "items": {"type": "string"}},
+    "code_excerpt": {"type": "string"},
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "repro": {"type": "array", "items": {"type": "string"}},
+    "impact": {"type": "string"},
+    "remediation": {"type": "string"},
+    "target_link": {"type": "string"},
+    "ts": {"type": "string", "format": "date-time"},
+    "updated_ts": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"enum": ["confirmed", "exploited", "exploitable-not-detonated"]}}},
+      "then": {"properties": {"evidence": {"minItems": 1}}}
+    }
+  ],
+  "additionalProperties": true
+}

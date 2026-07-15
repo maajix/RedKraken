@@ -1,0 +1,10 @@
+# Engagement working dirs hold CLIENT DATA, evidence, creds, audit logs — never commit.
+engagements/*
+docs/*
+.active_engagement
+.claude
+
+# local noise
+*.log
+*.swp
+.DS_Store
