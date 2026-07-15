@@ -5,14 +5,18 @@ extract() turns a Bash command into (network_seen, candidate_hosts). These
 assert the target-extraction fixes: flag parsing is gated on an active network
 tool, `-d` is tool-aware (domain vs POST data), shell redirects/subcommands are
 not hosts, and `active_tool` does not leak across newline-separated statements.
-Engagement-independent (scope in/out is decided elsewhere). Exit != 0 on fail.
+Engagement-independent (scope in/out is decided elsewhere). Runs under pytest
+(as test_*) and as a standalone script (exit != 0 on fail).
 """
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / ".claude" / "hooks"))
-import scope_guard as sg  # noqa: E402
+try:
+    import scope_guard as sg  # noqa: E402
+except ModuleNotFoundError:  # .claude/hooks absent from this checkout
+    sg = None
 
 
 def cands(command):
@@ -51,13 +55,26 @@ CASES = [
     ("curl -s -d a=b https://evil.other.com/", {"https://evil.other.com/"}),
 ]
 
-fail = 0
-print("scope_guard extract() self-test:")
-for cmd, want in CASES:
-    got = cands(cmd)
-    ok = got == want
-    fail += 0 if ok else 1
-    print(f"  {'ok  ' if ok else 'FAIL'} want={sorted(want)} got={sorted(got)} :: {cmd.splitlines()[0]}")
 
-print(f"\n{'PASS' if not fail else 'FAIL'}: {len(CASES) - fail}/{len(CASES)} cases")
-sys.exit(1 if fail else 0)
+def test_scope_guard_extract():
+    if sg is None:
+        import pytest
+        pytest.skip("scope_guard.py not present (.claude/hooks missing)")
+    mismatches = {cmd: {"want": sorted(want), "got": sorted(cands(cmd))}
+                  for cmd, want in CASES if cands(cmd) != want}
+    assert not mismatches, mismatches
+
+
+if __name__ == "__main__":
+    if sg is None:
+        print("SKIP: scope_guard.py not present (.claude/hooks missing)")
+        sys.exit(0)
+    fail = 0
+    print("scope_guard extract() self-test:")
+    for cmd, want in CASES:
+        got = cands(cmd)
+        ok = got == want
+        fail += 0 if ok else 1
+        print(f"  {'ok  ' if ok else 'FAIL'} want={sorted(want)} got={sorted(got)} :: {cmd.splitlines()[0]}")
+    print(f"\n{'PASS' if not fail else 'FAIL'}: {len(CASES) - fail}/{len(CASES)} cases")
+    sys.exit(1 if fail else 0)
