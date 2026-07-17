@@ -1,3 +1,0 @@
-# Unbenannt
-
-Status: Nicht begonnen

@@ -11,7 +11,7 @@ including error oracles**, **XML/XSLT/expression/format/second-order injection**
 and **CSV/spreadsheet formula injection**. Open the
 precise playbook before acting: prefer matching `playbooks/modern/` cards, then
 look the technique up in `playbooks/web/_catalog.md` → read
-`playbooks/web/<file>.md` (and `_raw/...` for full notes). Obey `scope-guard` +
+`playbooks/web/<file>.md`. Obey `scope-guard` +
 `tool-preflight`.
 
 ## Signals → technique

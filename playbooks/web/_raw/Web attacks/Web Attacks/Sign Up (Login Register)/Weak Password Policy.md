@@ -1,3 +1,0 @@
-# Weak Password Policy
-
-A weak password policy increases the probability of an attacker having success using brute force and dictionary attacks against user accounts. An attacker who can determine user passwords can take over a user's account and potentially access sensitive data in the application. Applications usually only have Restrictions on Passwords while Creating an account. Make sure you check for both the cases when Resetting Password, Creating Account, Changing Password from Account Settings.

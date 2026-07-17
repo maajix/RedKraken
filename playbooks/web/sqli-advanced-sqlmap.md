@@ -78,12 +78,12 @@ URI: http://www.example.com:80/?id=1&h=c4ca4238a0b923820dcc509a6f75849b
 URI: http://www.example.com:80/?id=9061&h=4d7e0d72898ae7ea3593eb5ebf20c744
 URI: http://www.example.com:80/?id=1%2C.%2C%27%22.%2C%28.%29&h=620460a56536e2d32fb2f4842ad5a08d
 URI: http://www.example.com:80/?id=1%27MyipGP%3C%27%22%3EibjjSu&h=db7c815825b14d67aaa32da09b8b2d42
-URI: http://www.example.com:80/?id=1%29%20AND%209978%socks4://177.39.187.70:33283ssocks4://177.39.187.70:332833D1232%20AND%20%284955%3D4955&h=02312acd4ebe69e2528382dfff7fc5cc
+URI: http://www.example.com:80/?id=1%29%20AND%209978%socks4://198.51.100.15:33283ssocks4://198.51.100.15:332833D1232%20AND%20%284955%3D4955&h=02312acd4ebe69e2528382dfff7fc5cc
 ```
 
 ## IP Address Concealing
 
-- If we want to conceal our IP address, or we are blacklisted, we can try to use a proxy or the anonymity network Tor `-tor` or `-proxy` (e.g. `-proxy="socks4://177.39.187.70:33283"`) or a proxy list `-proxy-file`
+- If we want to conceal our IP address, or we are blacklisted, we can try to use a proxy or the anonymity network Tor `-tor` or `-proxy` (e.g. `-proxy="socks4://198.51.100.15:33283"`) or a proxy list `-proxy-file`
 - We can check if tor is working correctly by using `-check-tor`
 
 ## WAF Bypass

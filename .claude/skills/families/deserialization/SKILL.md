@@ -8,8 +8,8 @@ description: Triage and exploit insecure deserialization in PHP, Python (pickle)
 Covers: **PHP**, **Python (pickle/PyYAML)**, **Java**, **.NET**, native object
 streams, YAML/XML, polymorphic JSON, and other type-reconstructing formats. Start
 with `playbooks/modern/untrusted-data-deserialization.md`, then open the precise
-imported playbook via `playbooks/web/_catalog.md` (and `_raw/` for worked
-examples). Obey `scope-guard` + `tool-preflight`.
+imported playbook via `playbooks/web/_catalog.md`. Obey `scope-guard` +
+`tool-preflight`.
 
 ## Signals → format
 

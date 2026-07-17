@@ -1,5 +1,12 @@
 # KB curation — messy Notion notes → lossless playbook library
 
+> **Retired / historical.** The one-shot importer has run; its Notion source is gone and it
+> must not be re-run against `playbooks/web/`. The verbatim `_raw/` copies and the
+> `scripts/check_coverage.sh` gate have been removed from the repo — provenance now lives in
+> git history plus the `_sources.tsv` manifest. The curated `playbooks/web/*.md` are the
+> source of truth and are hand-maintained; use `scripts/rebuild_catalog.py` to keep
+> `_catalog.md`/`_sources.tsv` consistent after edits. This document is kept for context only.
+
 One-time (re-runnable) pass that turns the raw Notion web-attack export into a uniform,
 searchable, **lossless** playbook library under `playbooks/web/`. Nothing is cut: every note
 is copied verbatim to `_raw/` and every code block is preserved in its playbook.

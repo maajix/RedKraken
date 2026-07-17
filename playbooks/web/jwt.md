@@ -338,7 +338,7 @@ The token is using x5u header parameter which contains the location of the X.509
 5. Extract the public key from the generated certificate:
 			"openssl x509 -pubkey -noout -in attacker.crt > publicKey.pem"
 6. Use Jwt.io and paste the public key (publicKey.pem) and the private key (attacker.key) in their respective places in the "Decoded" section
-7. Set "x5u: http://192.87.15.2:8080/attacker.crt", you can use repl.it to host that
+7. Set "x5u: http://198.51.100.17:8080/attacker.crt", you can use repl.it to host that
 8. Use forged jwt token in request
 
 ```

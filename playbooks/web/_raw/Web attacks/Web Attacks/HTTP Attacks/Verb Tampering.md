@@ -1,9 +1,0 @@
-# Verb Tampering
-
-[1_Introduction_to_HTTP_verb_Tampering_INFO](Verb%20Tampering/1_Introduction_to_HTTP_verb_Tampering_INFO%202842c37daa2981989989ef43481320a8.md)
-
-[2_Bypassing_Basic_Authentication_INFO](Verb%20Tampering/2_Bypassing_Basic_Authentication_INFO%202842c37daa29810ba55de2d41ed33991.md)
-
-[3_Bypassing_Security_Filters_INFO](Verb%20Tampering/3_Bypassing_Security_Filters_INFO%202842c37daa298186a039df7fe22a1493.md)
-
-[4_Verb_Tampering_Prevention_INFO](Verb%20Tampering/4_Verb_Tampering_Prevention_INFO%202842c37daa298178979de3b134579dda.md)

