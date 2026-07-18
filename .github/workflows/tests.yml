@@ -51,6 +51,10 @@ jobs:
         if: always()
         run: python3 tests/test_completion_guard.py
 
+      - name: Scope-proxy regression test
+        if: always()
+        run: python3 tests/test_scope_proxy.py
+
       - name: CI workflow regression test
         if: always()
         run: python3 tests/test_ci_workflow.py

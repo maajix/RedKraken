@@ -22,6 +22,11 @@ class CiWorkflowTest(unittest.TestCase):
 
         self.assertIn("python3 tests/test_completion_guard.py", workflow)
 
+    def test_scope_proxy_regression_test_runs_in_ci(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("python3 tests/test_scope_proxy.py", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
