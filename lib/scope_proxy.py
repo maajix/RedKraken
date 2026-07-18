@@ -46,7 +46,7 @@ def within_window(value: str) -> bool:
 
 class ScopeEnforcer:
     def __init__(self) -> None:
-        self.error = ""
+        self.config_error = ""
         self.directory: Path | None = None
         self.config: dict = {}
         self.tool = os.environ.get("PENTEST_PROXY_TOOL", "").strip()
@@ -67,7 +67,7 @@ class ScopeEnforcer:
                 self.tokens = float(self.policy["burst"])
                 self.concurrency = asyncio.BoundedSemaphore(int(self.policy["max_concurrency"]))
         except ConfigError as exc:
-            self.error = str(exc)
+            self.config_error = str(exc)
 
     def allowed_support(self, host: str) -> bool:
         for pattern in self.config.get("egress_support") or []:
@@ -120,10 +120,10 @@ class ScopeEnforcer:
 
     async def request(self, flow: http.HTTPFlow) -> None:
         allowed = False
-        reason = self.error or "scope configuration unavailable"
+        reason = self.config_error or "scope configuration unavailable"
         try:
-            if self.error:
-                raise ConfigError(self.error)
+            if self.config_error:
+                raise ConfigError(self.config_error)
             if not within_window(str(self.config.get("time_window") or "any")):
                 raise ConfigError("outside engagement time_window")
             allowed, host, reason = scope_decision(self.config, flow.request.pretty_url)
@@ -144,10 +144,23 @@ class ScopeEnforcer:
         # so the header is never sent to out-of-scope hosts.
         for name, value in self.required_headers.items():
             flow.request.headers[name] = value
-        if self.concurrency is not None:
-            await self.concurrency.acquire()
-            self.acquired.add(flow.id)
-        await self.throttle()
+        concurrency = self.concurrency
+        release_on_exit = False
+        registered = False
+        try:
+            if concurrency is not None:
+                await concurrency.acquire()
+                release_on_exit = True
+                self.acquired.add(flow.id)
+                registered = True
+            await self.throttle()
+            release_on_exit = False
+        finally:
+            if concurrency is not None and release_on_exit:
+                if registered:
+                    self.release(flow)
+                else:
+                    concurrency.release()
 
     def response(self, flow: http.HTTPFlow) -> None:
         self.release(flow)
