@@ -34,11 +34,13 @@ if ! command -v schemathesis >/dev/null 2>&1; then
 fi
 
 if [ "$ALLOW_MUTATION" = true ]; then
-  python3 - "$PENTEST_ENGAGEMENT_DIR/engagement.yaml" <<'PY'
-import sys, yaml
-config = yaml.safe_load(open(sys.argv[1]))
-if config.get("destructive_allowed") is not True:
-    raise SystemExit("--allow-mutation requires destructive_allowed: true")
+  python3 - "$ROOT" "$PENTEST_ENGAGEMENT_DIR/engagement.yaml" <<'PY'
+import sys
+sys.path.insert(0, f"{sys.argv[1]}/lib")
+from harness_config import load_engagement, roe_authorizations
+policy = roe_authorizations(load_engagement(sys.argv[2]))
+if policy["mutation_allowed"] is not True:
+    raise SystemExit("--allow-mutation requires mutation_allowed: true")
 PY
 fi
 

@@ -40,6 +40,21 @@
           { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/audit_hook.sh" }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/completion_guard_hook.sh" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "recon-agent|web-vuln-hunter",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/completion_guard_hook.sh" }
+        ]
+      }
     ]
   }
 }

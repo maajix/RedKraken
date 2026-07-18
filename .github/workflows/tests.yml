@@ -31,7 +31,9 @@ jobs:
 
       - name: Imported-note coverage gate
         if: always()
-        run: bash scripts/check_coverage.sh
+        run: |
+          python3 scripts/rebuild_catalog.py
+          git diff --exit-code -- playbooks/web/_catalog.md playbooks/web/_sources.tsv
 
       - name: Modern coverage gate
         if: always()
@@ -44,3 +46,11 @@ jobs:
       - name: Scope-guard hook regression test
         if: always()
         run: python3 tests/test_scope_guard_hook.py
+
+      - name: Completion-guard hook regression test
+        if: always()
+        run: python3 tests/test_completion_guard.py
+
+      - name: CI workflow regression test
+        if: always()
+        run: python3 tests/test_ci_workflow.py

@@ -17,7 +17,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 
-from harness_config import ConfigError, engagement_yaml, load_engagement  # noqa: E402
+from harness_config import ConfigError, engagement_yaml, load_engagement, roe_authorizations  # noqa: E402
 from secure_engagement import secure_engagement  # noqa: E402
 
 
@@ -115,6 +115,7 @@ def background_section(directory: Path) -> list[str]:
 
 def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], input_warnings: list[str]) -> str:
     counts = Counter(str(row.get("severity", "info")).lower() for row in rows if row.get("status") not in OMIT_MAIN)
+    roe = roe_authorizations(config)
     lines = [
         f"# Web Application Penetration Test - {md(config.get('name') or directory.name)}",
         "",
@@ -126,7 +127,11 @@ def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], 
         "",
         f"- Targets: {', '.join(f'`{md(item)}`' for item in config.get('targets') or []) or 'None (white-box only)'}",
         f"- Out of scope: {', '.join(f'`{md(item)}`' for item in config.get('out_of_scope') or []) or 'None listed'}",
-        f"- Destructive actions allowed: `{str(bool(config.get('destructive_allowed', False))).lower()}`",
+        f"- Mutation allowed: `{str(roe['mutation_allowed']).lower()}`",
+        f"- Sensitive data access allowed: `{str(roe['sensitive_data_access_allowed']).lower()}`",
+        f"- Credential use allowed: `{str(roe['credential_use_allowed']).lower()}`",
+        f"- Pivoting allowed: `{str(roe['pivoting_allowed']).lower()}`",
+        f"- Availability impact allowed: `{str(roe['availability_impact_allowed']).lower()}`",
         f"- Time window: `{md(config.get('time_window') or 'any')}`",
         "",
         *background_section(directory),

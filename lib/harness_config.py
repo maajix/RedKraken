@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -15,6 +16,16 @@ import yaml
 
 class ConfigError(ValueError):
     pass
+
+
+ROE_AUTHORIZATION_GATES = (
+    "mutation_allowed",
+    "sensitive_data_access_allowed",
+    "credential_use_allowed",
+    "pivoting_allowed",
+    "availability_impact_allowed",
+)
+HEADER_NAME_RE = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}")
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -54,7 +65,7 @@ def load_engagement(path: str | os.PathLike[str]) -> dict[str, Any]:
             continue
         if not isinstance(config[key], list) or not all(isinstance(item, str) for item in config[key]):
             raise ConfigError(f"{key} must be a list of strings")
-    for key in ("destructive_allowed", "rate_limit_enabled"):
+    for key in ("destructive_allowed", "rate_limit_enabled", *ROE_AUTHORIZATION_GATES):
         if key in config and not isinstance(config[key], bool):
             raise ConfigError(f"{key} must be true or false")
     for key in ("max_threads",):
@@ -64,7 +75,48 @@ def load_engagement(path: str | os.PathLike[str]) -> dict[str, Any]:
         _validate_rate_limit(config["rate_limit"], "rate_limit")
     if config.get("rate_limit_enabled") is True and "rate_limit" not in config:
         raise ConfigError("rate_limit is required when rate_limit_enabled is true")
+    if "required_headers" in config:
+        _validate_required_headers(config["required_headers"])
     return config
+
+
+def _validate_required_headers(value: Any) -> None:
+    if not isinstance(value, dict):
+        raise ConfigError("required_headers must be a mapping of header name to string value")
+    if len(value) > 32:
+        raise ConfigError("required_headers may contain at most 32 entries")
+    seen: set[str] = set()
+    for name, header_value in value.items():
+        if not isinstance(name, str) or not HEADER_NAME_RE.fullmatch(name):
+            raise ConfigError("required_headers contains an invalid header name")
+        folded = name.casefold()
+        if folded in seen:
+            raise ConfigError("required_headers contains duplicate case-insensitive names")
+        seen.add(folded)
+        if (
+            not isinstance(header_value, str)
+            or not header_value
+            or len(header_value) > 4096
+            or "\r" in header_value
+            or "\n" in header_value
+        ):
+            raise ConfigError("required_headers values must be non-empty injection-safe strings")
+
+
+def roe_authorizations(config: dict[str, Any]) -> dict[str, bool]:
+    """Resolve independent RoE gates, failing closed except for legacy mutation."""
+    mutation_allowed = (
+        config.get("mutation_allowed") is True
+        if "mutation_allowed" in config
+        else config.get("destructive_allowed") is True
+    )
+    return {
+        "mutation_allowed": mutation_allowed,
+        "sensitive_data_access_allowed": config.get("sensitive_data_access_allowed") is True,
+        "credential_use_allowed": config.get("credential_use_allowed") is True,
+        "pivoting_allowed": config.get("pivoting_allowed") is True,
+        "availability_impact_allowed": config.get("availability_impact_allowed") is True,
+    }
 
 
 def _positive_number(value: Any, name: str) -> float:

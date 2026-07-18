@@ -36,8 +36,15 @@ objectives:                          # optional, focuses triage
   - injection (SQLi/SSTI/cmd)
 
 # ---- RULES OF ENGAGEMENT ----
-destructive_allowed: false           # gate for irreversible actions (DROP/DELETE/writes/DoS-style fuzzing).
-                                     # false => prove non-destructively or record "exploitable, not detonated".
+# These gates are independent. Enabling one never implies another. Missing gates
+# fail closed. `destructive_allowed` is retained only as a legacy fallback for
+# mutation_allowed; new engagements should set the explicit gate below.
+mutation_allowed: false              # target writes/deletes, account changes, persistence
+sensitive_data_access_allowed: false # real system/source/customer data or metadata reads
+credential_use_allowed: false        # authenticating or signing with discovered credentials
+pivoting_allowed: false              # following a finding to another in-scope service/account
+availability_impact_allowed: false   # load, resource exhaustion, crash, or DoS-style testing
+destructive_allowed: false           # legacy mutation fallback; does not enable the other gates
 rate_limit_enabled: false            # opt-in only: no throttling is applied unless explicitly true
 rate_limit:
   requests_per_second: 10            # global default when enabled (integer or decimal)
@@ -51,9 +58,22 @@ rate_limit:
 max_threads: 20                      # legacy tool hint; not a rate limit by itself
 time_window: "any"                   # e.g. "2026-07-01T09:00/2026-07-01T17:00" or "any"
 
+# ---- RETENTION (optional metadata; hygiene scanner remains usable without it) ----
+retention:
+  status: active                     # active | completed-retained | expired
+  owner: security-team               # accountable role/team; avoid personal secrets
+  expires_at: ""                     # ISO date/time when policy defines one
+
+# ---- REQUIRED REQUEST HEADERS (optional) ----
+# Injected by the scope proxy on every in-scope request (defense: never sent to
+# out-of-scope hosts). Use for bug-bounty identification headers the program
+# mandates on all traffic. Tools that bypass the proxy must set these manually.
+required_headers:                    # mapping of header name -> value (omit or {} for none)
+  X-Bug-Bounty: your-username
+
 # ---- HELPERS (optional) ----
 oob_host: ""                         # your out-of-band/collaborator host for blind SSRF/XXE/SQLi callbacks
 test_credentials:                    # provided low-priv creds, if any (kept in engagement dir, gitignored)
-  - "user@example.com:Password123"
+  - "<TEST_USERNAME>:<TEST_PASSWORD_FROM_SECURE_STORE>"
 notes: >
   Staging only. Do not touch *.prod.example.com. WAF: Cloudflare.

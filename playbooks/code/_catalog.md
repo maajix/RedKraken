@@ -85,6 +85,20 @@ it can be wrong in **both** directions.
 | vulnerable / loosely-pinned / typosquatted dependency | known-vuln dependency | supply-chain | (scanner) | **osv-scanner, trivy, grype** |
 | Dockerfile runs root/`:latest`, IaC public bucket, `debug=True`, CI `pull_request_target`, unpinned action | misconfiguration | config-iac | (scanner) | **trivy config, hadolint, checkov** |
 
+## Language sink packs
+
+| Language / files | Playbook |
+|---|---|
+| C# / .NET (`*.cs`, `*.cshtml`, `*.razor`) | [sinks-csharp.md](sinks-csharp.md) |
+| Go (`*.go`) | [sinks-go.md](sinks-go.md) |
+| Java (`*.java`, `*.jsp`) | [sinks-java.md](sinks-java.md) |
+| JavaScript / TypeScript | [sinks-js.md](sinks-js.md) |
+| Kotlin / JVM (`*.kt`, `*.kts`) | [sinks-kotlin.md](sinks-kotlin.md) |
+| PHP (`*.php`) | [sinks-php.md](sinks-php.md) |
+| Python (`*.py`) | [sinks-python.md](sinks-python.md) |
+| Ruby (`*.rb`, `*.erb`) | [sinks-ruby.md](sinks-ruby.md) |
+| Rust (`*.rs`) | [sinks-rust.md](sinks-rust.md) |
+
 ## Baseline without scanners
 
 Every `sinks-<lang>.md` ships a ripgrep sweep — the audit runs on `rg` + the LLM

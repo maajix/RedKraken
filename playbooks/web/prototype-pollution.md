@@ -357,10 +357,10 @@ A newly registered user has no `deviceIP` property (it's `null` in the DB, so `i
 
 ```jsx
 POST /update HTTP/1.1
-Host: proto.htb
+Host: app.example.test
 Content-Length: 48
 Content-Type: application/json
-Cookie: session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InB3biIsImlhdCI6MTY4MTA3MjgxMCwiZXhwIjoxNjgxMDc2NDEwfQ.q1dbloU9k06dAymKHXvMvVrpEeYWRXABx9sK7qG6CWg
+Cookie: session=<REDACTED_TEST_SESSION>
 
 {"__proto__":{"deviceIP":"127.0.0.1; whoami"}}
 ```
@@ -441,6 +441,25 @@ Blocking only the literal key `__proto__` is insufficient — the constructor/pr
 `Object.create(null)` creates an object with prototype `null`, so it has no inherited properties at all and can't be polluted — but it also loses useful inherited properties like `toString()`, which makes it impractical for many real use cases.
 
 Ultimately, prototype pollution arises from recursively manipulating object properties using user input, most often via a third-party merge/clone/extend library — so patching is often just a matter of using secure, up-to-date libraries. [nopp](https://github.com/snyk-labs/nopp) is a package that can help enforce some of these defenses automatically.
+
+## Reviewed consolidation — client-side gadget confirmation
+
+Use `../modern/browser-messaging-dom-clobbering.md` as the primary method. For
+client-side prototype pollution, separate the pollution primitive from impact:
+first prove a disposable, unique property on a tester-owned page/runtime, then trace
+that property into a concrete script gadget or security decision. Prefer an isolated
+browser context and reset it after each canary; do not use navigation, credential,
+or global-runtime mutation as the first proof. Gadget catalogs and browser tooling
+are lead sources, not confirmation without a reproducible source-to-sink path.
+
+### Merged provenance
+
+| retired curated note | curated SHA-256 | original source | original SHA-256 |
+|---|---|---|---|
+| `prototype-pollution-clientside-pp.md` | `bc53cb54a137a6f04489c847662a123b4fad2c7a81cbc87d55f44cb5cb6f3b72` | `_raw/Web attacks/Web Attacks/Prototype Pollution/Clientside PP.md` | `7eeb1d65bf23ad7ccbdfb4b12f52a96f9328aacc8d710bbf605c317af696d774` |
+
+The retired note's gadget references were already represented above; its active
+script-navigation payload was intentionally not duplicated.
 
 ## Source
 - `_raw/Web attacks/Web Attacks/Prototype Pollution.md`

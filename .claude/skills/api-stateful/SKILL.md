@@ -18,6 +18,10 @@ for gRPC reflection and invocation. Missing tools become explicit coverage gaps.
    create -> read -> update -> delete. Save and minimize every failure seed.
 3. Replay operations and sequences across anonymous, peer, owner, and privileged
    identities. Diff both response and resulting state.
+   Inventory selectors from paths, parameters, bodies, headers, cookies, links,
+   exports, filenames, schema IDs, client bundles, and unused client APIs. Record
+   representation and any deterministic client/source transform; test the same
+   synthetic object across owner and peer rather than enumerating real objects.
 4. Test undocumented fields, duplicate parameters, content-type variants, batch
    requests, pagination, idempotency keys, callbacks, GraphQL aliases/fragments/
    persisted queries/subscriptions, and gRPC streaming metadata.
@@ -25,7 +29,11 @@ for gRPC reflection and invocation. Missing tools become explicit coverage gaps.
    only when the operator explicitly set `rate_limit_enabled: true`.
 
 For bounded Schemathesis execution, run a tool-labelled enforcement proxy and use
-the harness wrapper. Mutation additionally requires `destructive_allowed: true`:
+the harness wrapper. Mutation additionally requires `mutation_allowed: true`.
+Real sensitive records, discovered credentials, cross-service pivots, and
+availability effects independently require `sensitive_data_access_allowed`,
+`credential_use_allowed`, `pivoting_allowed`, and
+`availability_impact_allowed` respectively:
 ```bash
 bash scripts/start_scope_proxy.sh "$PENTEST_ENGAGEMENT_DIR" 18080 schemathesis
 PENTEST_PROXY=http://127.0.0.1:18080 bash scripts/run_schemathesis.sh \
@@ -36,3 +44,13 @@ methods by default. Do not replace it with schema-provided server URLs.
 
 Write normalized endpoints/workflows to state, raw output to `state/scan-raw/`,
 and only validated findings through `record_finding.sh`.
+
+## Raw-output contract
+
+- Preserve full scanner output under `state/scan-raw/` with directory `0700` and
+  files `0600`; cap stdout or write directly there before reading it.
+- Return only structured counts, hashes, redacted high-signal slices, and evidence
+  paths. Never inline raw credentials, cookies, tokens, personal data, or full
+  client responses into model/orchestration context.
+- Truncation must never destroy the only evidence copy. Parse/truncation/tool
+  failures are `not-tested` coverage, never successful coverage.

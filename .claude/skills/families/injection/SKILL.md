@@ -26,7 +26,15 @@ look the technique up in `playbooks/web/_catalog.md` → read
 
 ## Detection → confirmation → escalation
 
-1. **SQLi.** Manual first: `'`, `' OR '1'='1`, true/false pairs (`AND 1=1` vs `AND 1=2`), then time (`SLEEP(5)` / `pg_sleep` / `WAITFOR DELAY`). Confirm with a controlled boolean/time difference you actually observe. Then `sqlmap -u '<url>' -p <param> --batch --threads <max_threads> --level 3 --risk 2` (honor rate limit). DB-specifics: MSSQL `xp_cmdshell`/NetNTLM leak, PostgreSQL `COPY ... PROGRAM` (RCE), file read/write — all in the SQLi playbooks. OOB via `oob_host` when blind.
+1. **SQLi.** Load `relational-query-boundaries.md`. Establish a repeated manual
+   true/false or error pair first. Save the exact redacted HTTP request, mark one
+   injection point with `*` or one explicit `-p`, then replay with `sqlmap -r`,
+   `--parse-errors`, `-t <engagement>/state/scan-raw/sqlmap-traffic.txt`,
+   `--threads 1 --level 1 --risk 1`, bounded techniques/time, and native rate
+   controls only when enabled. Write full output under `state/scan-raw/`; read a
+   redacted bounded summary. Tor, external proxy lists, generic WAF evasion, bulk
+   dumps, file write/read, credential extraction, and OS execution are not
+   default detection and require explicit RoE escalation.
 2. **NoSQL.** Load `nosql-operator-injection.md`; vary scalar/object/array/null
    and one harmless operator against synthetic positive/negative records. Require
    a stable query or authorization differential; never enumerate production data.
@@ -48,4 +56,9 @@ look the technique up in `playbooks/web/_catalog.md` → read
    prove only a literal, boolean, or arithmetic effect by default.
 
 ## Evidence
-Save the request + the distinguishing response (boolean diff, timing, extracted data, command output) to `evidence/<id>/`. For destructive steps (writes, RCE, `xp_cmdshell`) require `destructive_allowed`; otherwise stop at a read-only PoC and mark `exploitable-not-detonated`.
+Save the request and least-sensitive distinguishing response. Writes require
+`mutation_allowed`; real data reads require `sensitive_data_access_allowed`;
+discovered credential use requires `credential_use_allowed`; cross-service access
+requires `pivoting_allowed`; load/timing techniques with material service impact
+require `availability_impact_allowed`. Otherwise stop at a synthetic read-only PoC
+and mark `exploitable-not-detonated`.

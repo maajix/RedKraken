@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://web-pentest-harness.example.test/schemas/lead-state-v1.schema.json",
+  "title": "Pentest durable lead state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "revision", "leads", "coverage", "loop"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "revision": {"type": "integer", "minimum": 0},
+    "leads": {"type": "array", "items": {"$ref": "lead-v1.schema.json"}},
+    "coverage": {"type": "array", "items": {"$ref": "coverage-v1.schema.json"}},
+    "loop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "iterations", "max_iterations", "no_progress_rounds", "max_no_progress_rounds",
+        "max_attempts", "requests", "max_requests", "max_seconds", "started_at",
+        "progress_count", "surface_delta"
+      ],
+      "properties": {
+        "iterations": {"type": "integer", "minimum": 0},
+        "max_iterations": {"type": "integer", "minimum": 1},
+        "no_progress_rounds": {"type": "integer", "minimum": 0},
+        "max_no_progress_rounds": {"type": "integer", "minimum": 1},
+        "max_attempts": {"type": "integer", "minimum": 1},
+        "requests": {"type": "integer", "minimum": 0},
+        "max_requests": {"type": "integer", "minimum": 1},
+        "max_seconds": {"type": "integer", "minimum": 1},
+        "started_at": {"type": "string", "format": "date-time"},
+        "progress_count": {"type": "integer", "minimum": 0},
+        "surface_delta": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

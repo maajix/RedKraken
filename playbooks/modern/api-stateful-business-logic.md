@@ -19,14 +19,21 @@ and asynchronous completion rather than testing endpoints independently.
 ## Safe detection
 
 1. Capture legitimate owner workflows using operator-created fixtures.
-2. Replay one step as anonymous, peer, cross-tenant, owner, and privileged roles;
+2. Inventory object selectors from paths, query/body fields, headers, cookies,
+   links, exports, static filenames, GraphQL/gRPC IDs, client bundles, and unused
+   client APIs. Record representation type and any deterministic transformation
+   shipped in client/source logic; encoding or hashing is not authorization.
+3. Replay one step as anonymous, peer, cross-tenant, owner, and privileged roles;
    change only object, property, action, or workflow state.
-3. Try duplicate, reordered, skipped, and repeated transitions; stale tokens;
+4. Try duplicate, reordered, skipped, and repeated transitions; stale tokens;
    read-after-delete; cancel-after-complete; and idempotency-key reuse.
-4. For writable objects, add or change one unauthorized property at a time.
-5. Compare response and authoritative after-state. A denial response with a
+5. Compare list/detail/download/update/delete and alternate method/content-type
+   representations one dimension at a time. Never mass-enumerate or download
+   real-user objects.
+6. For writable objects, add or change one unauthorized property at a time.
+7. Compare response and authoritative after-state. A denial response with a
    completed side effect is a confirmed authorization failure.
-6. Use Schemathesis for bounded schema generation and RESTler for deeper
+8. Use Schemathesis for bounded schema generation and RESTler for deeper
    producer-consumer sequences. Keep generated mutation behind the RoE gate.
 
 ## Confirmation and evidence

@@ -44,7 +44,19 @@ def checks():
     yield "code_lang(unknown) == text", rr.code_lang("route.rs") == "text"
     yield "code_lang(None) == text", rr.code_lang(None) == "text"
     # directory holds unused paths only; evidence_lines() reports them missing
-    output = rr.render(ROOT / "tests", {"name": "test-engagement"}, [FINDING], [])
+    output = rr.render(
+        ROOT / "tests",
+        {
+            "name": "synthetic-assessment",
+            "mutation_allowed": True,
+            "sensitive_data_access_allowed": False,
+            "credential_use_allowed": False,
+            "pivoting_allowed": False,
+            "availability_impact_allowed": False,
+        },
+        [FINDING],
+        [],
+    )
     for heading in ("**TL;DR:**", "#### Summary", "#### Details", "#### PoC",
                     "#### Evidence", "#### Impact", "#### Recommended Fix"):
         yield f"contains {heading!r}", heading in output
@@ -54,6 +66,11 @@ def checks():
     yield "code excerpt fenced with ts language", "```ts" in output
     yield "PoC section carries the repro command", "curl -X PUT" in output
     yield "evidence path recorded as pending (file doesn't exist on disk)", "evidence/F-TEST-1/poc.txt` (missing)" in output
+    yield "report renders mutation gate", "Mutation allowed: `true`" in output
+    yield "report renders sensitive-read gate", "Sensitive data access allowed: `false`" in output
+    yield "report renders credential-use gate", "Credential use allowed: `false`" in output
+    yield "report renders pivot gate", "Pivoting allowed: `false`" in output
+    yield "report renders availability gate", "Availability impact allowed: `false`" in output
 
 
 def test_render_report_template():

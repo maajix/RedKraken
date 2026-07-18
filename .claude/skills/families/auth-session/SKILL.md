@@ -43,4 +43,8 @@ matching `playbooks/modern/` cards before the imported
    bindings with two tester accounts.
 
 ## Evidence
-Capture the token/cookie before & after, the forged artifact, and the privileged response proving takeover/bypass. Account-takeover PoC against real users needs `destructive_allowed`; otherwise demonstrate on a test account from `test_credentials`.
+Capture redacted before/after token state and the privileged response proving the
+tester-owned bypass. Real sensitive data requires `sensitive_data_access_allowed`;
+using discovered credentials requires `credential_use_allowed`; account changes
+require `mutation_allowed`; crossing to another service requires
+`pivoting_allowed`. Otherwise demonstrate only with supplied tester accounts.

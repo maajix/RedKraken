@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "baselines": [
+    {
+      "id": "owasp-wstg-v42-scenarios",
+      "name": "OWASP Web Security Testing Guide 4.2 scenarios",
+      "version": "4.2",
+      "source": "https://github.com/OWASP/wstg/tree/v4.2",
+      "versioned_id_pattern": "^WSTG-v42-[A-Z]{4}-[0-9]{2}$",
+      "example_id": "WSTG-v42-INFO-01",
+      "applicability": "Select every scenario relevant to an observed or declared surface; record not-applicable with a reason for explicitly reviewed exclusions."
+    },
+    {
+      "id": "owasp-asvs-v5.0.0-requirements",
+      "name": "OWASP Application Security Verification Standard 5.0.0 requirements",
+      "version": "5.0.0",
+      "source": "https://github.com/OWASP/ASVS/releases/tag/v5.0.0_release",
+      "versioned_id_pattern": "^v5\\.0\\.0-[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "example_id": "v5.0.0-1.2.5",
+      "applicability": "Choose the authorized assurance level and record every selected requirement as tested, exhausted, blocked, not-applicable, or not-tested with evidence or reason."
+    }
+  ]
+}

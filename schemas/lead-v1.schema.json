@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://web-pentest-harness.example.test/schemas/lead-v1.schema.json",
+  "title": "Pentest lead v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "fingerprint", "family", "kind", "subject", "method", "parameter",
+    "priority", "status", "attempts", "provenance", "evidence", "hypothesis",
+    "parent_leads", "parent_findings", "safety_requirements", "created_at", "updated_at"
+  ],
+  "properties": {
+    "id": {"type": "string", "pattern": "^L-[a-f0-9]{16}$"},
+    "fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "family": {"type": "string", "minLength": 1},
+    "kind": {"type": "string", "minLength": 1},
+    "subject": {"type": "string", "minLength": 1},
+    "method": {"type": "string", "minLength": 1},
+    "parameter": {"type": "string"},
+    "priority": {"type": "integer", "minimum": 0, "maximum": 100},
+    "status": {"enum": ["queued", "leased", "completed", "exhausted", "blocked"]},
+    "attempts": {"type": "integer", "minimum": 0},
+    "provenance": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "hypothesis": {"type": "string"},
+    "parent_leads": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^L-[a-f0-9]{16}$"}
+    },
+    "parent_findings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}
+    },
+    "safety_requirements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "lease_owner": {"type": "string", "minLength": 1, "maxLength": 128},
+    "lease_until": {"type": "string", "format": "date-time"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "leased"}}, "required": ["status"]},
+      "then": {"required": ["lease_owner", "lease_until"]}
+    }
+  ]
+}

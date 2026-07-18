@@ -28,7 +28,7 @@ Qualitative, impact × exploitability. Use CVSS-ish reasoning but state it plain
 ```
 # Web Application Penetration Test — <name>
 ## Executive summary            (plain-language risk, headline findings, counts by severity)
-## Scope & rules of engagement  (targets, out-of-scope, intent, dates, destructive_allowed)
+## Scope & rules of engagement  (targets, exclusions, intent, dates, mutation, sensitive-data, credential-use, pivoting, and availability gates)
 ## Background & Environment      (optional; rendered from `state/notes.md` when present: stack/versions, auth & tenancy model, observed defenses, obtained-credential locations — non-vuln environment facts)
 ## Methodology                  (recon → triage → hunt → exploit; tools used)
 ## Findings

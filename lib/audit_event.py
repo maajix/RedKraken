@@ -31,6 +31,18 @@ def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
 
 
+def canonical_event_bytes(event: dict[str, Any]) -> bytes:
+    """Canonical chain bytes; stored digest is the only excluded field."""
+    payload = {key: value for key, value in event.items() if key != "event_sha256"}
+    return json.dumps(
+        payload, separators=(",", ":"), sort_keys=True, ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def event_digest(event: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_event_bytes(event)).hexdigest()
+
+
 def redact(value: str) -> str:
     result = value
     for pattern in SECRET_PATTERNS:
@@ -48,15 +60,50 @@ def resolve_directory(explicit: str | None = None) -> Path | None:
     return Path(value).expanduser().resolve()
 
 
+def _last_event(fd: int) -> dict[str, Any] | None:
+    size = os.fstat(fd).st_size
+    if size == 0:
+        return None
+    tail_size = min(size, 1024 * 1024)
+    tail = os.pread(fd, tail_size, size - tail_size)
+    if not tail.endswith(b"\n"):
+        raise ValueError("malformed audit tail: incomplete line")
+    lines = [line for line in tail.splitlines() if line.strip()]
+    if not lines:
+        return None
+    if size > tail_size and len(lines) == 1 and not tail.startswith(b"\n"):
+        raise ValueError("malformed audit tail: event exceeds 1 MiB")
+    try:
+        parsed = json.loads(lines[-1])
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("malformed audit tail: invalid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("malformed audit tail: event is not an object")
+    return parsed
+
+
 def append_event(directory: Path, event: dict[str, Any]) -> None:
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(directory, 0o700)
     path = directory / "audit.jsonl"
-    payload = json.dumps(event, separators=(",", ":"), sort_keys=True) + "\n"
-    fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+    fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_RDWR, 0o600)
     try:
         os.chmod(path, 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)
+        previous = _last_event(fd)
+        chained = dict(event)
+        chained["audit_chain_version"] = 1
+        if previous is None:
+            chained["prev_sha256"] = "0" * 64
+        elif "event_sha256" in previous:
+            if previous.get("audit_chain_version") != 1 or event_digest(previous) != previous.get("event_sha256"):
+                raise ValueError("broken audit tail: stored hash mismatch")
+            chained["prev_sha256"] = str(previous["event_sha256"])
+        else:
+            chained["prev_sha256"] = event_digest(previous)
+            chained["chain_origin"] = "legacy-anchor"
+        chained["event_sha256"] = event_digest(chained)
+        payload = json.dumps(chained, separators=(",", ":"), sort_keys=True, ensure_ascii=False) + "\n"
         os.write(fd, payload.encode("utf-8"))
         os.fsync(fd)
     finally:

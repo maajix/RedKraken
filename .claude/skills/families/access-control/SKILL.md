@@ -12,17 +12,24 @@ objects when equivalent test fixtures can prove the issue.
 
 ## Method
 
-1. Capture one legitimate request and its before-state as the owner.
-2. Replay the identical request as each other identity, changing only the object,
+1. Build a bounded reference inventory from paths, query/body fields, headers,
+   cookies, links, exports, static filenames, GraphQL/gRPC IDs, client bundles,
+   and unused client APIs. Record integer, opaque ID, UUID, slug, filename,
+   Base64, hash, composite, or client-derived representation. Reconstruct only
+   deterministic transforms shipped in client/source logic; encoding or hashing
+   is not authorization.
+2. Capture one legitimate request and its before-state as the owner.
+3. Replay the identical request as each other identity, changing only the object,
    tenant, property, or action selector under test.
-3. Compare status, normalized body, timing, and authoritative after-state. A `200`
+4. Compare status, normalized body, timing, and authoritative after-state. A `200`
    alone is not proof; a `403` with a completed side effect is still a bug.
-4. Exercise list/detail, batch, export/import, nested object, GraphQL node/alias,
+5. Exercise list/detail/download/update/delete, batch, export/import, nested
+   object, alternate method/content-type, GraphQL node/alias,
    WebSocket/subscription, asynchronous job, and alternate-method variants.
-5. Test state transitions out of order: closed/revoked/archived objects, repeated
+6. Test state transitions out of order: closed/revoked/archived objects, repeated
    actions, invitation acceptance, owner removal, approval bypass, and stale-token
    reuse. Verify invariants such as "a tenant retains an owner" after every step.
-6. For writable JSON, send one unauthorized property at a time to detect mass
+7. For writable JSON, send one unauthorized property at a time to detect mass
    assignment and object-property authorization failures.
 
 ## Safety and evidence

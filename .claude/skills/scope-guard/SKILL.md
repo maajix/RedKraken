@@ -28,7 +28,15 @@ If the target list or the `intent` is missing, empty, contradictory, or you are 
 
 ## Rules of engagement (from `engagement.yaml`)
 
-- **`destructive_allowed: false`** (default) → never run irreversible actions: DROP/DELETE/UPDATE that changes data, file writes to the target, account/password changes, mass/DoS-style fuzzing, fork bombs via SSTI/RCE. Prove impact non-destructively (read-only PoC) or record the finding as `status: exploitable-not-detonated` with the exact command you *would* run.
+- Resolve the independent RoE gates with `harness_config.roe_authorizations`:
+  `mutation_allowed`, `sensitive_data_access_allowed`,
+  `credential_use_allowed`, `pivoting_allowed`, and
+  `availability_impact_allowed`. Missing gates fail closed. An action must satisfy
+  every gate it needs; no gate overrides target scope. `destructive_allowed` is a
+  legacy fallback for mutation only.
+- When a required gate is false, use the least-sensitive, non-mutating synthetic
+  proof or record `status: exploitable-not-detonated`. Never include a live secret
+  in a proposed command or finding.
 - **Rate limiting is opt-in.** If and only if `rate_limit_enabled: true`, enforce
   `rate_limit` through `scripts/start_scope_proxy.sh` and compatible tool flags.
   Global RPS/burst/concurrency and `per_tool` overrides are supported. When the

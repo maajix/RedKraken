@@ -33,7 +33,11 @@ server), **open redirect**, **dangling markup**, **tabnabbing**, **clickjacking*
 
 ## Approach
 
-1. **XSS.** Probe reflection context (HTML / attribute / JS / URL), break out with a context-appropriate payload, confirm execution (`alert`/`print` or a beacon to `oob_host`). `dalfox url <url>` / `XSStrike` to scale; manual for DOM (trace source→sink in JS). Stored XSS: find the persistence point, confirm it fires for a second viewer.
+1. **XSS.** Load `browser-script-execution-contexts.md` first. Begin with inert text and
+   trace the final parsed sink; use an isolated tester-owned browser and a local
+   DOM/console marker. For stored paths use only tester-owned records and viewer
+   identities, then clean up. Never collect cookies/tokens, beacon client data,
+   or expose a real-user view.
 2. **CSRF.** Confirm no token / token not validated / predictable; build a PoC HTML form that performs the state change cross-site.
 3. **CORS / XSSI.** If ACAO reflects arbitrary Origin with `Allow-Credentials: true`, prove cross-origin read of authenticated data from an attacker page.
 4. **Prototype pollution.** Pollute `__proto__.x` via JSON/query/merge; find a gadget that turns it into DOM XSS (client) or RCE/privesc (server, Node) per the playbook.

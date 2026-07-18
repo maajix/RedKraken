@@ -289,5 +289,37 @@ PostgreSQL-Specific Techniques
 
 Custom Tampering
 
+## Reviewed consolidation — SQLi scope and remediation
+
+Use `../modern/relational-query-boundaries.md` as the primary method. Database-
+specific syntax is secondary to a paired control that proves a query semantic
+change. PostgreSQL client basics add no attack-specific coverage and should come
+from the installed server/client documentation rather than a pinned setup recipe.
+
+File access through an injection path is read-only but can expose sensitive data.
+Confirm capability first with the database principal's effective permissions and,
+when a content proof is authorized, a harness-owned non-sensitive canary file.
+Access to system files, workload credentials, or cloud metadata remains a separate
+sensitive-read decision even though it is non-mutating. Never enumerate file
+contents character-by-character merely to increase evidence volume.
+
+Remediate with typed parameterized APIs (including dynamic-list expansion supplied
+by the driver), fixed allowlisted identifiers for non-parameterizable query parts,
+least-privilege database roles, and removal of unnecessary file/network/extension
+capabilities. Validate inputs for business meaning, but do not treat escaping or
+validation as a substitute for separating query code from data. Re-test delayed and
+stored values at the eventual query sink to cover second-order injection.
+
+### Merged provenance
+
+| retired curated note | curated SHA-256 | original source | original SHA-256 |
+|---|---|---|---|
+| `sqli-file-read.md` | `19c3b4f1b8131752debbd71d35588cd07f4cf97e705ca17a037d27586911c32d` | `_raw/Web attacks/Web Attacks/SQLi/File Read.md` | `8811d75832d36d170ca262d46bfca3296f84564a1ca0192094020a0cbf4ea517` |
+| `sqli-introduction-postgresql.md` | `eff93fd4c2a4aac87a9a6fbf83714b850d8f7b14cf91344ad5023f40c06c6b00` | `_raw/Web attacks/Web Attacks/SQLi/Introduction PostgreSQL.md` | `5d691401b55ac3d922889d84edb0373360e3bedd916715ebf646c90f54743329` |
+| `sqli-mitigation.md` | `12d7b35d9145846370453fb5e373994d6261078a4751e0aa00edc2699317546b` | `_raw/Web attacks/Web Attacks/SQLi/Mitigation.md` | `32ceff7b6c723f63ec0520c4a87998fd1bd627a16c58065a8e3801781cd1213a` |
+
+The generic PostgreSQL tutorial, credential-like sample output, unbounded file dump
+loop, and environment-changing setup commands were not retained.
+
 ## Source
 Original note: `_raw/Web attacks/Web Attacks/SQLi.md`

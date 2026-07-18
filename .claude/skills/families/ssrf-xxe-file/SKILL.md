@@ -22,12 +22,32 @@ Covers: **SSRF** (+ filter bypasses, DNS rebinding), **XXE** (+ blind/OOB, XXE�
 1. **SSRF.** Load `playbooks/modern/url-parser-ssrf-routing.md`. Confirm first
    against `oob_host`, record the actual connected destination, and test parser
    edge classes, redirects, DNS, and address normalization one variable at a time.
-   Use synthetic internal fixtures by default. Cloud metadata, control-plane
-   access, internal port scanning, credentials, and pivots are RoE-gated; never
-   follow an OOB callback directly into them.
-2. **XXE.** Inject a DTD with an external entity; in-band file read (`file:///etc/passwd`), else **blind/OOB** exfiltration via an external DTD on `oob_host`. Escalate XXE→SSRF, XXE→LFI, XXE→RCE (`expect://`, PHP filter) per the playbook.
-3. **LFI / path traversal.** `../` + null/encoding bypasses; read source via `php://filter/convert.base64-encode`; **PHP filter chain → RCE** (no file upload needed); log/`/proc/self/environ` poisoning → RCE; wrappers (`data://`, `expect://`, `zip://`).
-4. **File upload.** Bypass type/extension/content checks (double ext, magic bytes, `.phar`/`.phtml`, SVG/XML→XSS/XXE, polyglots) → drop a webshell, then locate & trigger it. RCE/webshell is destructive-adjacent — honor `destructive_allowed`; prefer proving write+exec minimally.
+   Use synthetic internal fixtures by default. Reading cloud metadata requires
+   `sensitive_data_access_allowed`; using returned credentials separately
+   requires `credential_use_allowed`; following the path to another in-scope
+   service requires `pivoting_allowed`. Never follow an OOB callback directly
+   into any of them.
+2. **XXE.** Use an inert local or approved OOB canary first. External file reads,
+   internal service access, recursive expansion, and RCE are escalation-gated.
+   Real system/source data requires `sensitive_data_access_allowed`; resource
+   exhaustion also requires `availability_impact_allowed`.
+3. **LFI / path traversal.** Load `server-file-resolution-boundaries.md`; prove
+   canonical-root escape only with a uniquely named synthetic file. System,
+   source, credential, wrapper/filter-chain, log-poisoning, write, and RCE paths
+   require explicit RoE escalation. `/etc/passwd` is a non-destructive read, but
+   it is still real system data and requires `sensitive_data_access_allowed`.
+4. **File upload.** Load `file-upload-processing-boundaries.md`; map upload →
+   transform → scan → store → retrieve with inert canaries and owner/peer
+   fixtures. Active HTML/script, malware, polyglots, archive bombs, webshells,
+   and execution are never default detection. Target writes or execution require
+   `mutation_allowed`; archive bombs require `availability_impact_allowed`.
+
+`destructive_allowed` is a legacy fallback for `mutation_allowed` only. It does
+not grant `sensitive_data_access_allowed`, `credential_use_allowed`,
+`pivoting_allowed`, or `availability_impact_allowed`.
 
 ## Evidence
-Capture the OOB callback log, the file contents read (`/etc/passwd`, source, metadata creds), or the webshell command output. Internal/metadata access is high impact — record the proof and stop pivoting unless intent + RoE cover it.
+Capture the least-sensitive decisive proof: an OOB callback, synthetic canary,
+redacted authorized read, or command identity. Never store a live credential in
+the finding. Stop before mutation, sensitive access, credential use, pivoting,
+or availability impact unless every corresponding gate and scope check passes.

@@ -22,6 +22,8 @@ docs/*
 .mcp.json
 
 # local noise
+__pycache__/
+*.py[cod]
 *.log
 *.swp
 .DS_Store

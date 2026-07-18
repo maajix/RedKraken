@@ -56,10 +56,12 @@ class ScopeEnforcer:
         self.updated = time.monotonic()
         self.concurrency: asyncio.BoundedSemaphore | None = None
         self.acquired: set[str] = set()
+        self.required_headers: dict[str, str] = {}
         try:
             yaml_path = resolve_engagement(None, root=ROOT)
             self.directory = yaml_path.parent
             self.config = load_engagement(yaml_path)
+            self.required_headers = dict(self.config.get("required_headers") or {})
             self.policy = rate_policy(self.config, self.tool)
             if self.policy:
                 self.tokens = float(self.policy["burst"])
@@ -137,6 +139,11 @@ class ScopeEnforcer:
                 {"Content-Type": "text/plain", "X-Pentest-Scope": "blocked"},
             )
             return
+        # Program RoE: stamp mandatory identification headers on every in-scope
+        # request (e.g. X-Bug-Bounty). Applied only after the scope check passes
+        # so the header is never sent to out-of-scope hosts.
+        for name, value in self.required_headers.items():
+            flow.request.headers[name] = value
         if self.concurrency is not None:
             await self.concurrency.acquire()
             self.acquired.add(flow.id)

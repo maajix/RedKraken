@@ -87,7 +87,12 @@ For scanner-native families the auditor validates the staged scanner rows (drop 
 
 ## Phase 4 — Confirm (variant analysis + grey-box)
 1. **Variant analysis** — for each `confirmed` finding, sweep the tree for siblings of the same sink pattern (`rg` the exact sink). Record each as its own finding (dedup). This is the highest-ROI step in an audit.
-2. **Grey-box bridge** — if the engagement also has in-scope `targets`: for each `confirmed` finding that maps to an HTTP entry point (from the codemap), dispatch the **`exploit-agent`** with the finding id to confirm it against the live app (RoE-gated: destructive only if `destructive_allowed`). Set `target_link` and update `status` (`exploited` / `exploitable-not-detonated`). Scope-check every live request.
+2. **Grey-box bridge** — if the engagement also has in-scope `targets`: for each
+   `confirmed` finding that maps to an HTTP entry point, dispatch the
+   **`exploit-agent`**. Resolve `mutation_allowed`,
+   `sensitive_data_access_allowed`, `credential_use_allowed`, `pivoting_allowed`,
+   and `availability_impact_allowed`; every live action must satisfy all applicable
+   gates and scope checks. Set `target_link` and update the evidence-backed status.
 3. **Prove the runtime, not the source.** Grey-box confirmation observes the
    *deployed* behavior — it does not infer it (see the two-lens filter in
    `playbooks/code/_catalog.md`):
@@ -125,4 +130,5 @@ Finalise `state/notes.md` (it feeds the report's Background & Environment sectio
 
 ## Resumability & stop conditions
 - `loop.json` tracks `phase` + `families_done`/`families_pending`; a re-run continues, never restarts from zero.
-- Stop and ask the operator on: missing/ambiguous `source_path` or authorization, a grey-box step that needs `destructive_allowed: true` for a high-impact path, or core tools (`rg`/`jq`) missing.
+- Stop and ask the operator on missing/ambiguous `source_path` or authorization,
+  any grey-box step whose applicable RoE gate is false, or missing core tools.

@@ -16,14 +16,25 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 
 from harness_config import ConfigError, load_engagement, resolve_engagement, scope_decision  # noqa: E402
+from audit_event import append_event, redact, resolve_directory, sha256, utc_now  # noqa: E402
 
 
 NETWORK_TOOLS = {
-    "amass", "curl", "dalfox", "dig", "dnsx", "feroxbuster", "ffuf", "gau",
-    "gobuster", "grpcurl", "host", "httpx", "katana", "masscan", "mitmdump",
+    "amass", "arjun", "curl", "dalfox", "dig", "dirb", "dirsearch", "dnsx",
+    "feroxbuster", "ffuf", "gau", "gobuster", "gospider", "grpcurl", "hakrawler",
+    "host", "httpx", "katana", "masscan", "mitmdump", "naabu",
     "nc", "ncat", "nikto", "nmap", "nuclei", "openssl", "paramspider", "ping",
-    "schemathesis", "socat", "sqlmap", "ssh", "subfinder", "telnet", "wget",
-    "whatweb", "waybackurls", "wpscan", "wafw00f",
+    "schemathesis", "socat", "sqlmap", "sslscan", "sslyze", "ssh", "subfinder",
+    "telnet", "testssl.sh", "tlsx", "wget", "whatweb", "waybackurls", "wfuzz",
+    "wpscan", "wafw00f", "x8",
+}
+# Bash allow entries that look security-related but must not be parsed as direct
+# target tools. Keep this mapping narrow: tests reject new target-capable allow
+# entries unless they are guarded above or carry an explicit reason here.
+NETWORK_TOOL_EXEMPTIONS = {
+    "jwt-tool": "offline token analysis; no target traffic",
+    "playwright": "installer or launcher; target traffic uses scoped browser proxy",
+    "zaproxy": "daemon launcher; target traffic uses scoped proxy workflow",
 }
 # Unambiguous "the next token is a target host/url" flags. Short ambiguous flags
 # (-d, -t) are handled tool-aware below because they collide with data/threads.
@@ -46,9 +57,19 @@ GENERIC_NETWORK_RE = re.compile(r"\b(requests|urllib|urlopen|httpx|aiohttp|socke
 # Excludes shell redirects (2>err.log), key=val data, and tool subcommands
 # (openssl "s_client", amass "enum") that would otherwise be scope-checked.
 HOST_TOKEN_RE = re.compile(r"[A-Za-z0-9._\-]+(?::\d+)?$")
+# Transparent prefixes run the FOLLOWING token as the real command (sudo curl …,
+# timeout 300 nuclei …, xargs ffuf …). Seeing one keeps the command position open
+# and flips the statement to fail-closed "loose" mode, so a network tool anywhere
+# later is still caught even when the prefix's own args confuse position tracking.
+PREFIX_COMMANDS = {
+    "sudo", "doas", "env", "nohup", "setsid", "stdbuf", "nice", "ionice",
+    "time", "timeout", "watch", "xargs", "command", "builtin",
+    "proxychains", "proxychains4",
+}
+ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
-def decision(reason: str) -> None:
+def decision(reason: str, command: str = "") -> None:
     payload = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -57,6 +78,23 @@ def decision(reason: str) -> None:
         }
     }
     print(json.dumps(payload, separators=(",", ":")))
+    # A denied command never executes, so the PostToolUse audit hook never fires
+    # -- this is the only chance to record the block. Best-effort and fully
+    # isolated: an audit failure must never suppress the deny emitted above.
+    try:
+        directory = resolve_directory()
+        if directory is not None:
+            append_event(directory, {
+                "schema_version": 1,
+                "ts": utc_now(),
+                "event": "scope-block",
+                "tool": "Bash",
+                "reason": reason[:500],
+                "command": redact(command),
+                "command_sha256": sha256(command) if command else "",
+            })
+    except Exception:  # noqa: BLE001 - logging must not affect the block decision
+        pass
 
 
 def clean_candidate(value: str) -> str:
@@ -90,38 +128,62 @@ def targets_from_file(value: str) -> list[str]:
 
 def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
     candidates: list[str] = []
-    network_seen = False
+    network_cmd = False   # a network tool actually invoked in command position
     active_tool = ""
+    cmd_pos = True        # the next ordinary word is a command being executed
+    loose = False         # a transparent prefix put us in fail-closed over-include
     skip_value = False
     target_value = False
     input_value = False
     for token in tokens:
-        if token in {"|", "||", "&&", ";"}:
+        if token in {"|", "||", "&&", ";", "&"}:
             active_tool = ""
+            cmd_pos = True
+            loose = False
             skip_value = target_value = input_value = False
             continue
         if token in {">", ">>", "<", "2>", "2>>", "1>", "&>", "&>>"}:
             skip_value = True  # the following token is a redirect target file
             continue
-        basename = os.path.basename(token)
-        if basename in NETWORK_TOOLS:
-            network_seen = True
-            active_tool = basename
-            continue
-        if basename in {"python", "python3"} and GENERIC_NETWORK_RE.search(command):
-            network_seen = True
-            active_tool = basename
-            continue
         if target_value:
             candidates.append(clean_candidate(token))
             target_value = False
+            cmd_pos = False
             continue
         if input_value:
             candidates.extend(targets_from_file(token))
             input_value = False
+            cmd_pos = False
             continue
         if skip_value:
             skip_value = False
+            continue
+        basename = os.path.basename(token)
+        # Command-position gate: a token only marks the statement as a network
+        # command when it is the command actually being executed. A tool NAME used
+        # as a bare argument (`echo nmap`, `grep -r ffuf`, `for f in … ffuf …`)
+        # must not trip the guard. Transparent prefixes (sudo/env/xargs/timeout/…)
+        # run the following token, so they hold the command position open AND set
+        # `loose`, keeping a network tool later in the statement fail-closed.
+        if cmd_pos:
+            if token.startswith("-") or ASSIGN_RE.match(token):
+                continue  # a prefix's own flag or NAME=value; stay at command pos
+            if basename in PREFIX_COMMANDS:
+                loose = True
+                continue
+            cmd_pos = False
+            if basename in NETWORK_TOOLS:
+                network_cmd = True
+                active_tool = basename
+                continue
+            if basename in {"python", "python3"} and GENERIC_NETWORK_RE.search(command):
+                network_cmd = True
+                active_tool = basename
+                continue
+            # a non-network command; fall through with no active_tool set
+        elif loose and basename in NETWORK_TOOLS:
+            network_cmd = True
+            active_tool = basename
             continue
         # Only interpret target/input/value flags while a network tool is the
         # active command; otherwise "-l"/"-d"/"-t" on plain commands (wc -l,
@@ -154,7 +216,7 @@ def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
             if host_like and cand.upper() not in {"GET", "POST", "PUT", "PATCH", "DELETE"} and not Path(token).is_file():
                 candidates.append(cand)
                 active_tool = ""
-    return network_seen, candidates
+    return network_cmd, candidates
 
 
 def extract(command: str) -> tuple[bool, list[str]]:
@@ -207,7 +269,9 @@ def main() -> int:
             if not allowed:
                 raise ConfigError(f"target {host!r} denied: {reason}")
     except ConfigError as exc:
-        decision(str(exc))
+        decision(str(exc), command)
+    except Exception as exc:  # noqa: BLE001 - a scope guard must fail closed on ANY error
+        decision(f"scope guard internal error ({type(exc).__name__}): {exc}", command)
     return 0
 
 
