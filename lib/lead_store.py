@@ -307,6 +307,20 @@ class LeadState:
             return copy.deepcopy(result)
 
     def upsert_lead(self, raw: Any) -> dict[str, Any]:
+        return self._upsert_lead(raw, requeue_terminal=False)
+
+    @classmethod
+    def lead_id(cls, raw: Any) -> str:
+        """Return the stable id an input lead would receive without writing state."""
+        return str(cls._normalize_lead(raw)["id"])
+
+    def ensure_lead(self, raw: Any) -> dict[str, Any]:
+        """Upsert a lead and requeue it when required work became pending again."""
+        return self._upsert_lead(raw, requeue_terminal=True)
+
+    def _upsert_lead(
+        self, raw: Any, *, requeue_terminal: bool
+    ) -> dict[str, Any]:
         incoming = self._normalize_lead(raw)
         timestamp = self._now()
 
@@ -328,8 +342,18 @@ class LeadState:
                 )
                 if incoming["hypothesis"]:
                     lead["hypothesis"] = incoming["hypothesis"]
+                if requeue_terminal and lead["status"] in {
+                    "completed",
+                    "exhausted",
+                    "blocked",
+                }:
+                    lead["status"] = "queued"
+                    lead["attempts"] = 0
                 lead["updated_at"] = timestamp
-                return {"result": "updated", "lead": lead}
+                return {
+                    "result": "requeued" if lead["status"] == "queued" and requeue_terminal else "updated",
+                    "lead": lead,
+                }
             incoming["created_at"] = timestamp
             incoming["updated_at"] = timestamp
             state["leads"].append(incoming)
@@ -343,6 +367,97 @@ class LeadState:
         with os.fdopen(lock_fd, "r+") as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
             return copy.deepcopy(self._load())
+
+    @staticmethod
+    def _next_eligible(state: dict[str, Any]) -> dict[str, Any] | None:
+        max_attempts = state["loop"]["max_attempts"]
+        candidates = [
+            lead
+            for lead in state["leads"]
+            if lead["status"] == "queued" and lead["attempts"] < max_attempts
+        ]
+        if not candidates:
+            return None
+        terminal_baseline: dict[str, int] = {}
+        for lead in state["leads"]:
+            if (
+                lead["kind"] == "discovery"
+                and "coordinator:required-coverage" in lead["provenance"]
+                and lead["status"] in {"completed", "exhausted", "blocked"}
+            ):
+                terminal_baseline[lead["subject"]] = (
+                    terminal_baseline.get(lead["subject"], 0) + 1
+                )
+
+        def scheduling_key(lead: dict[str, Any]) -> tuple[int, int, int, str]:
+            baseline = (
+                lead["kind"] == "discovery"
+                and "coordinator:required-coverage" in lead["provenance"]
+            )
+            if baseline:
+                lane = 0
+            elif lead["kind"] == "discovery":
+                lane = 1
+            else:
+                lane = 2
+            served = terminal_baseline.get(lead["subject"], 0) if baseline else 0
+            return lane, served, -lead["priority"], lead["id"]
+
+        return sorted(candidates, key=scheduling_key)[0]
+
+    @staticmethod
+    def _pending_bypass(state: dict[str, Any], lead_id: str) -> list[dict[str, Any]]:
+        """Return non-terminal bypass leads that escalated the given hypothesis."""
+        return [
+            child
+            for child in state["leads"]
+            if child["kind"] == "bypass"
+            and lead_id in child["parent_leads"]
+            and child["status"] in {"queued", "leased"}
+        ]
+
+    @staticmethod
+    def _has_bypass_children(state: dict[str, Any], lead_id: str) -> bool:
+        return any(
+            child["kind"] == "bypass" and lead_id in child["parent_leads"]
+            for child in state["leads"]
+        )
+
+    def close_queued(self, lead_id: str, outcome: str) -> dict[str, Any]:
+        """Close scheduler work whose coverage became terminal before leasing."""
+        if outcome not in {"completed", "exhausted", "blocked"}:
+            raise LeadStateError("outcome must be completed, exhausted, or blocked")
+        timestamp = self._now()
+
+        def operation(state: dict[str, Any]) -> dict[str, Any]:
+            lead = next((item for item in state["leads"] if item["id"] == lead_id), None)
+            if lead is None:
+                raise LeadStateError(f"unknown lead id: {lead_id}")
+            if lead["status"] == "queued":
+                lead["status"] = outcome
+                lead["updated_at"] = timestamp
+            return lead
+
+        return self._mutate(operation)
+
+    def inspect(self) -> dict[str, Any]:
+        """Initialize if needed, then return one consistent read-only campaign view."""
+        self._prepare()
+        current = self._parse_time(self._now())
+        lock_fd = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        with os.fdopen(lock_fd, "r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            missing = not self.path.exists()
+            state = self._load()
+            before_recovery = copy.deepcopy(state)
+            self._recover_stale(state, current)
+            if missing or state != before_recovery:
+                self._write(state)
+            return {
+                "state": copy.deepcopy(state),
+                "next_work": copy.deepcopy(self._next_eligible(state)),
+                "can_stop": copy.deepcopy(self._can_stop(state, current)),
+            }
 
     @staticmethod
     def _worker(value: Any) -> str:
@@ -360,7 +475,12 @@ class LeadState:
                 continue
             lead.pop("lease_owner", None)
             lead.pop("lease_until", None)
-            lead["status"] = "exhausted" if lead["attempts"] >= max_attempts else "queued"
+            reached_cap = lead["attempts"] >= max_attempts
+            if reached_cap and self._pending_bypass(state, lead["id"]):
+                # A hypothesis cannot exhaust while its specialist work remains.
+                lead["status"] = "queued"
+            else:
+                lead["status"] = "exhausted" if reached_cap else "queued"
             lead["updated_at"] = current.isoformat().replace("+00:00", "Z")
 
     def _lease(
@@ -380,16 +500,9 @@ class LeadState:
             self._recover_stale(state, current)
             max_attempts = state["loop"]["max_attempts"]
             if lead_id is None:
-                candidates = [
-                    lead
-                    for lead in state["leads"]
-                    if lead["status"] == "queued" and lead["attempts"] < max_attempts
-                ]
-                if not candidates:
+                lead = self._next_eligible(state)
+                if lead is None:
                     return None
-                lead = sorted(
-                    candidates, key=lambda item: (-item["priority"], item["id"])
-                )[0]
             else:
                 lead = next(
                     (item for item in state["leads"] if item["id"] == lead_id), None
@@ -458,8 +571,18 @@ class LeadState:
                 raise LeadStateError(f"unknown lead id: {lead_id}")
             if lead.get("status") != "leased" or lead.get("lease_owner") != owner:
                 raise LeadStateError("lead must be held by the lease owner")
+            final_evidence = merged_evidence
+            if outcome == "exhausted":
+                if self._pending_bypass(state, lead_id):
+                    raise LeadStateError(
+                        "hypothesis cannot be exhausted while specialist bypass work remains"
+                    )
+                if self._has_bypass_children(state, lead_id):
+                    final_evidence = _ordered_union(
+                        merged_evidence, ["not bypassed under the tested matrix"]
+                    )
             lead["status"] = outcome
-            lead["evidence"] = _ordered_union(lead["evidence"], merged_evidence)
+            lead["evidence"] = _ordered_union(lead["evidence"], final_evidence)
             lead.pop("lease_owner", None)
             lead.pop("lease_until", None)
             lead["updated_at"] = timestamp
@@ -559,6 +682,8 @@ class LeadState:
             reasons.append("coverage_empty")
         elif any(entry["status"] == "not-tested" for entry in state["coverage"]):
             reasons.append("coverage_not_tested")
+        elif any(entry["status"] == "blocked" for entry in state["coverage"]):
+            reasons.append("operator_blocked")
         if actionable:
             reasons.append("actionable_leads")
         return {

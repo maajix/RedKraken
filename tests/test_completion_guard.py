@@ -112,10 +112,29 @@ class CompletionGuardTest(unittest.TestCase):
 
     def test_stop_allows_when_no_actionable_lead_remains(self) -> None:
         self.write_state(status="completed")
+        LeadState(self.engagement).record_coverage(
+            "family", "access-control", "tested"
+        )
         result = self.run_hook({})
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
+
+    def test_stop_blocks_when_required_coverage_has_no_queued_lead(self) -> None:
+        store = LeadState(self.engagement, clock=lambda: "2026-01-01T00:00:00Z")
+        store.record_coverage(
+            "workflow",
+            "asset=synthetic.example.test;method=crawl;role=anonymous",
+            "not-tested",
+            reason="required discovery pending",
+        )
+
+        result = self.run_hook({})
+
+        self.assertEqual(result.returncode, 0)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn("completion requirements remain", output["reason"].casefold())
 
     def test_stop_hook_active_never_blocks_again(self) -> None:
         self.write_state()

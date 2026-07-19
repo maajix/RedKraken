@@ -23,6 +23,26 @@ from secure_engagement import secure_engagement  # noqa: E402
 
 SEVERITY = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 OMIT_MAIN = {"not-tested", "not-exploitable"}
+OUTCOME_LABELS = {
+    "converged": "converged",
+    "incomplete": "incomplete",
+    "operator_blocked": "operator-blocked",
+    "budget_exhausted": "budget-exhausted",
+}
+
+
+def campaign_outcome(directory: Path) -> dict[str, Any] | None:
+    """Read the coordinator's authoritative terminal decision, read-only.
+
+    Report rendering never advances the campaign, so a missing or unreadable
+    coordinator state degrades to an absent outcome rather than a hard failure.
+    """
+    try:
+        from campaign_coordinator import CampaignCoordinator  # noqa: PLC0415
+
+        return CampaignCoordinator(directory).outcome()
+    except Exception:  # noqa: BLE001 - report must render even if state is absent.
+        return None
 
 
 def md(value: Any) -> str:
@@ -113,7 +133,37 @@ def background_section(directory: Path) -> list[str]:
     return ["## Background & Environment", "", text, ""] if text else []
 
 
-def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], input_warnings: list[str]) -> str:
+def outcome_summary_line(outcome: dict[str, Any] | None) -> str:
+    if not outcome:
+        return "Campaign outcome: `unknown` (no coordinator state available)."
+    completion = outcome.get("completion") or {}
+    label = OUTCOME_LABELS.get(str(completion.get("outcome")), "unknown")
+    reasons = ", ".join(md(reason) for reason in completion.get("reasons") or []) or "none"
+    gate = "permitted" if outcome.get("reporting_permitted") else "not yet permitted"
+    return f"Campaign outcome: **{label}** (reasons: {reasons}). Reporting gate: {gate}."
+
+
+def remaining_coverage_lines(outcome: dict[str, Any] | None) -> list[str]:
+    frontier = ((outcome or {}).get("completion") or {}).get("remaining_frontier") or []
+    if not frontier:
+        return []
+    lines = ["", "### Remaining Coverage", "",
+             "| Coverage key | Status | Reason |", "|---|---|---|"]
+    for entry in frontier:
+        lines.append(
+            f"| {md(entry.get('key'))} | {md(entry.get('status'))} | "
+            f"{md(entry.get('reason') or entry.get('status_reason') or '')} |"
+        )
+    return lines
+
+
+def render(
+    directory: Path,
+    config: dict[str, Any],
+    rows: list[dict[str, Any]],
+    input_warnings: list[str],
+    outcome: dict[str, Any] | None = None,
+) -> str:
     counts = Counter(str(row.get("severity", "info")).lower() for row in rows if row.get("status") not in OMIT_MAIN)
     roe = roe_authorizations(config)
     lines = [
@@ -122,6 +172,8 @@ def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], 
         "## Executive Summary",
         "",
         f"Recorded findings: {len(rows)}. " + ", ".join(f"{name.title()}: {counts.get(name, 0)}" for name in SEVERITY) + ".",
+        "",
+        outcome_summary_line(outcome),
         "",
         "## Scope & Rules of Engagement",
         "",
@@ -200,6 +252,7 @@ def render(directory: Path, config: dict[str, Any], rows: list[dict[str, Any]], 
             lines.append(f"| {md(row.get('technique'))} | {md(row.get('status'))} | {md(row.get('status_reason') or row.get('summary'))} |")
     else:
         lines.append("No machine-readable not-tested or not-exploitable coverage rows were recorded.")
+    lines.extend(remaining_coverage_lines(outcome))
     if report_warnings:
         lines.extend(["", "### Data Quality Warnings", ""])
         lines.extend(f"- {md(warning)}" for warning in sorted(set(report_warnings)))
@@ -238,7 +291,10 @@ def main() -> int:
             raise ValueError(f"findings file missing: {findings}")
         rows, warnings = load_findings(findings)
         output = directory / "report.md"
-        atomic_write(output, render(directory, load_engagement(yaml_path), rows, warnings))
+        atomic_write(
+            output,
+            render(directory, load_engagement(yaml_path), rows, warnings, campaign_outcome(directory)),
+        )
         secure_engagement(directory)
         print(output)
         return 0

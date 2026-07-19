@@ -124,16 +124,17 @@ def main() -> int:
     if engagement is None:
         return 0
     decision = _can_stop(engagement)
-    if (
-        decision is not None
-        and decision.get("allowed") is False
-        and isinstance(decision.get("actionable"), int)
-        and decision["actionable"] > 0
-    ):
-        _block(
-            "Actionable pentest work remains and loop budget permits another pass. "
-            "Continue from the durable lead queue."
-        )
+    if decision is not None and decision.get("allowed") is False:
+        if isinstance(decision.get("actionable"), int) and decision["actionable"] > 0:
+            _block(
+                "Actionable pentest work remains and loop budget permits another pass. "
+                "Continue from the durable lead queue."
+            )
+        else:
+            _block(
+                "Campaign completion requirements remain unsatisfied. "
+                "Continue through the deterministic coordinator."
+            )
     return 0
 
 
