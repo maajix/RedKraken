@@ -345,6 +345,37 @@ class LeadState:
             return copy.deepcopy(self._load())
 
     @staticmethod
+    def _next_eligible(state: dict[str, Any]) -> dict[str, Any] | None:
+        max_attempts = state["loop"]["max_attempts"]
+        candidates = [
+            lead
+            for lead in state["leads"]
+            if lead["status"] == "queued" and lead["attempts"] < max_attempts
+        ]
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda lead: (-lead["priority"], lead["id"]))[0]
+
+    def inspect(self) -> dict[str, Any]:
+        """Initialize if needed, then return one consistent read-only campaign view."""
+        self._prepare()
+        current = self._parse_time(self._now())
+        lock_fd = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        with os.fdopen(lock_fd, "r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            missing = not self.path.exists()
+            state = self._load()
+            before_recovery = copy.deepcopy(state)
+            self._recover_stale(state, current)
+            if missing or state != before_recovery:
+                self._write(state)
+            return {
+                "state": copy.deepcopy(state),
+                "next_work": copy.deepcopy(self._next_eligible(state)),
+                "can_stop": copy.deepcopy(self._can_stop(state, current)),
+            }
+
+    @staticmethod
     def _worker(value: Any) -> str:
         if not isinstance(value, str) or not value.strip() or len(value) > 128:
             raise LeadStateError("worker must be a non-empty string of at most 128 characters")
@@ -380,16 +411,9 @@ class LeadState:
             self._recover_stale(state, current)
             max_attempts = state["loop"]["max_attempts"]
             if lead_id is None:
-                candidates = [
-                    lead
-                    for lead in state["leads"]
-                    if lead["status"] == "queued" and lead["attempts"] < max_attempts
-                ]
-                if not candidates:
+                lead = self._next_eligible(state)
+                if lead is None:
                     return None
-                lead = sorted(
-                    candidates, key=lambda item: (-item["priority"], item["id"])
-                )[0]
             else:
                 lead = next(
                     (item for item in state["leads"] if item["id"] == lead_id), None
