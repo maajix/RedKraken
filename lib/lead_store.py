@@ -307,6 +307,20 @@ class LeadState:
             return copy.deepcopy(result)
 
     def upsert_lead(self, raw: Any) -> dict[str, Any]:
+        return self._upsert_lead(raw, requeue_terminal=False)
+
+    @classmethod
+    def lead_id(cls, raw: Any) -> str:
+        """Return the stable id an input lead would receive without writing state."""
+        return str(cls._normalize_lead(raw)["id"])
+
+    def ensure_lead(self, raw: Any) -> dict[str, Any]:
+        """Upsert a lead and requeue it when required work became pending again."""
+        return self._upsert_lead(raw, requeue_terminal=True)
+
+    def _upsert_lead(
+        self, raw: Any, *, requeue_terminal: bool
+    ) -> dict[str, Any]:
         incoming = self._normalize_lead(raw)
         timestamp = self._now()
 
@@ -328,8 +342,18 @@ class LeadState:
                 )
                 if incoming["hypothesis"]:
                     lead["hypothesis"] = incoming["hypothesis"]
+                if requeue_terminal and lead["status"] in {
+                    "completed",
+                    "exhausted",
+                    "blocked",
+                }:
+                    lead["status"] = "queued"
+                    lead["attempts"] = 0
                 lead["updated_at"] = timestamp
-                return {"result": "updated", "lead": lead}
+                return {
+                    "result": "requeued" if lead["status"] == "queued" and requeue_terminal else "updated",
+                    "lead": lead,
+                }
             incoming["created_at"] = timestamp
             incoming["updated_at"] = timestamp
             state["leads"].append(incoming)
@@ -583,6 +607,8 @@ class LeadState:
             reasons.append("coverage_empty")
         elif any(entry["status"] == "not-tested" for entry in state["coverage"]):
             reasons.append("coverage_not_tested")
+        elif any(entry["status"] == "blocked" for entry in state["coverage"]):
+            reasons.append("operator_blocked")
         if actionable:
             reasons.append("actionable_leads")
         return {

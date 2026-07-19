@@ -72,6 +72,7 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
                 "actionable": 0,
                 "outcome": "incomplete",
                 "reasons": ["coverage_empty"],
+                "remaining_frontier": [],
             },
         )
         state = response["state"]
@@ -129,6 +130,7 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
                 "actionable": 2,
                 "outcome": "incomplete",
                 "reasons": ["coverage_empty", "actionable_leads"],
+                "remaining_frontier": [],
             },
         )
         persisted = json.loads(
@@ -180,6 +182,17 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
     def test_budget_exhaustion_returns_no_eligible_work(self) -> None:
         self.run_lead_cli("configure", "--max-iterations", "1")
         self.run_lead_cli(
+            "coverage",
+            "--dimension",
+            "workflow",
+            "--key",
+            "asset=synthetic.example.test;method=crawl;role=anonymous",
+            "--status",
+            "not-tested",
+            "--reason",
+            "required discovery pending",
+        )
+        self.run_lead_cli(
             "upsert",
             "--json",
             json.dumps(
@@ -202,6 +215,7 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
             response["completion"]["reasons"], ["iteration_budget_exhausted"]
         )
         self.assertIsNone(response["next_work"])
+        self.assertEqual(len(response["completion"]["remaining_frontier"]), 1)
 
 
 if __name__ == "__main__":
