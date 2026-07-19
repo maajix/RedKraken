@@ -5,9 +5,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
-from harness_config import engagement_yaml, load_engagement
+from harness_config import engagement_yaml, load_engagement, scope_decision
 from lead_store import LeadState
+from surface_store import SurfaceState
 
 
 class CampaignEventError(ValueError):
@@ -38,10 +40,27 @@ class CampaignCoordinator:
         "client-bundles",
         "api-schema",
     }
+    SURFACE_SOURCES = {"recon", "hunter", "bypass", "exploit", "explorer"}
+    SURFACE_METHODS = {
+        "host": BASELINE_METHODS,
+        "virtual-host": BASELINE_METHODS,
+        "asset": BASELINE_METHODS,
+        "path": ("crawl", "content-discovery", "parameter-discovery"),
+        "endpoint": ("crawl", "content-discovery", "parameter-discovery"),
+        "schema": ("api-operations", "api-parameters"),
+        "bundle": ("client-bundles", "client-routes"),
+        "parameter": ("parameter-characterization",),
+        "protocol": ("protocol-enumeration",),
+        "technology": ("version-characterization",),
+        "version": ("version-characterization",),
+        "role": ("authenticated-crawl", "authorization-matrix"),
+        "trust-relationship": ("trust-mapping",),
+    }
 
     def __init__(self, engagement: Path | str):
         self.engagement = Path(engagement)
         self.store = LeadState(self.engagement)
+        self.surface = SurfaceState(self.engagement)
 
     @staticmethod
     def _completion(
@@ -104,6 +123,42 @@ class CampaignCoordinator:
             "hypothesis": f"Complete {method} discovery for {asset} as {role}.",
         }
 
+    def _ensure_coverage(
+        self,
+        asset: str,
+        methods: tuple[str, ...],
+        role: str,
+        *,
+        reopen: bool,
+        provenance: str,
+    ) -> tuple[list[str], list[str]]:
+        state = self.store.snapshot()
+        coverage_by_key = {entry["key"]: entry for entry in state["coverage"]}
+        leads_by_id = {lead["id"]: lead for lead in state["leads"]}
+        coverage_ids: list[str] = []
+        work_ids: list[str] = []
+        for method in methods:
+            key = self._coverage_key(asset, method, role)
+            entry = coverage_by_key.get(key)
+            if entry is None or reopen:
+                entry = self.store.record_coverage(
+                    "workflow", key, "not-tested", reason="surface discovery pending"
+                )["coverage"]
+                coverage_by_key[key] = entry
+            coverage_ids.append(entry["id"])
+            raw = self._discovery_lead(asset, method, role)
+            raw["provenance"] = [provenance]
+            lead_id = self.store.lead_id(raw)
+            existing = leads_by_id.get(lead_id)
+            if entry["status"] == "not-tested" and (
+                existing is None or existing["status"] not in {"queued", "leased"}
+            ):
+                existing = self.store.ensure_lead(raw)["lead"]
+                leads_by_id[lead_id] = existing
+            if existing is not None:
+                work_ids.append(existing["id"])
+        return coverage_ids, work_ids
+
     def _seed_required_coverage(self) -> None:
         state = self.store.snapshot()
         coverage_by_key = {entry["key"]: entry for entry in state["coverage"]}
@@ -128,6 +183,104 @@ class CampaignCoordinator:
                 ensured = self.store.ensure_lead(raw)["lead"]
                 leads_by_id[lead_id] = ensured
 
+    @staticmethod
+    def _normalized_surface_value(kind: str, value: str) -> str:
+        normalized = value.strip()
+        if kind in {"host", "virtual-host", "asset"}:
+            return normalized.casefold()
+        if "://" in normalized:
+            parsed = urlsplit(normalized)
+            return urlunsplit(
+                (
+                    parsed.scheme.casefold(),
+                    parsed.netloc.casefold(),
+                    parsed.path or "/",
+                    parsed.query,
+                    "",
+                )
+            )
+        return normalized.casefold()
+
+    def _apply_surface(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict) or set(payload) != {"source", "observation"}:
+            raise CampaignEventError(
+                "surface.observed payload must contain source and observation"
+            )
+        source = payload["source"]
+        observation = payload["observation"]
+        if source not in self.SURFACE_SOURCES:
+            raise CampaignEventError("surface source is unsupported")
+        if not isinstance(observation, dict) or set(observation) - {
+            "kind",
+            "value",
+            "parent",
+            "attributes",
+        }:
+            raise CampaignEventError("surface observation fields are invalid")
+        kind = observation.get("kind")
+        value = observation.get("value")
+        parent = observation.get("parent", "")
+        attributes = observation.get("attributes", {})
+        if kind not in self.SURFACE_METHODS:
+            raise CampaignEventError("surface kind is unsupported")
+        if not isinstance(value, str) or not value.strip():
+            raise CampaignEventError("surface value must be a non-empty string")
+        if not isinstance(parent, str) or not isinstance(attributes, dict):
+            raise CampaignEventError("surface parent and attributes are invalid")
+        config = load_engagement(engagement_yaml(self.engagement))
+        scope_subject = parent or value
+        if kind in {"parameter", "role", "technology", "version", "trust-relationship"} and not parent:
+            return {
+                "accepted": False,
+                "operator_gate": True,
+                "reason": "parent scope is required",
+                "result": "rejected",
+                "progress": 0,
+                "coverage_ids": [],
+                "work_ids": [],
+            }
+        allowed, asset, reason = scope_decision(config, scope_subject)
+        if not allowed:
+            return {
+                "accepted": False,
+                "operator_gate": True,
+                "reason": reason,
+                "result": "rejected",
+                "progress": 0,
+                "coverage_ids": [],
+                "work_ids": [],
+            }
+        stored = self.surface.observe(
+            kind=kind,
+            value=self._normalized_surface_value(kind, value),
+            parent=self._normalized_surface_value("endpoint", parent) if parent else "",
+            attributes=attributes,
+            source=source,
+        )
+        changed = stored["result"] in {"appended", "changed"}
+        coverage_ids: list[str] = []
+        work_ids: list[str] = []
+        if changed:
+            role = self._normalized_surface_value("role", value) if kind == "role" else "anonymous"
+            coverage_ids, work_ids = self._ensure_coverage(
+                asset,
+                tuple(self.SURFACE_METHODS[kind]),
+                role,
+                reopen=stored["result"] == "changed",
+                provenance=f"surface:{source}:{stored['observation']['id']}",
+            )
+            self.store.record_iteration(progress_count=1, surface_delta=1)
+        return {
+            "accepted": True,
+            "operator_gate": False,
+            "reason": "in scope",
+            "result": stored["result"],
+            "progress": 1 if changed else 0,
+            "coverage_ids": coverage_ids,
+            "work_ids": work_ids,
+            "observation_id": stored["observation"]["id"],
+        }
+
     def _apply(self, event: Any) -> dict[str, Any]:
         if not isinstance(event, dict) or set(event) != {
             "schema_version",
@@ -139,9 +292,15 @@ class CampaignCoordinator:
             )
         if event["schema_version"] != 1:
             raise CampaignEventError("event schema_version must be 1")
+        payload = event["payload"]
+        if event["type"] == "surface.observed":
+            return {
+                "schema_version": 1,
+                "type": event["type"],
+                "result": self._apply_surface(payload),
+            }
         if event["type"] != "lead.upsert":
             raise CampaignEventError(f"unsupported event type: {event['type']}")
-        payload = event["payload"]
         if not isinstance(payload, dict) or set(payload) != {"lead"}:
             raise CampaignEventError("lead.upsert payload must contain only lead")
         return {
@@ -166,4 +325,5 @@ class CampaignCoordinator:
             "state": inspection["state"],
             "next_work": next_work,
             "completion": completion,
+            "surface": self.surface.snapshot(),
         }
