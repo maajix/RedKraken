@@ -9,41 +9,40 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODERN = ROOT / "playbooks" / "modern"
-CODE = ROOT / "playbooks" / "code"
+PLAYBOOKS = ROOT / "playbooks"
+CODE = PLAYBOOKS / "code-review"
 
-REQUIRED_MODERN = {
-    "attack-surface-architecture-mapping.md",
-    "external-resource-ownership.md",
-    "transaction-integrity-payment-workflows.md",
-    "realtime-sse-webrtc-authorization.md",
-    "workload-nonhuman-identity-lifecycle.md",
-    "browser-request-integrity-policy.md",
-    "request-parameter-authority-differentials.md",
-    "token-jose-verification-boundaries.md",
-    "command-directory-entity-injection.md",
+REQUIRED_TOPICS = {
+    "attack-surface/README.md",
+    "external-resources/README.md",
+    "payment-workflows/README.md",
+    "realtime/README.md",
+    "workload-identities/README.md",
+    "request-integrity/README.md",
+    "request-parsing/README.md",
+    "jwt-jose/README.md",
+    "command-directory-injection/README.md",
 }
 REQUIRED_CODE = {"sinks-csharp.md", "sinks-rust.md", "sinks-kotlin.md"}
 
 
 class RecommendedCoverageTests(unittest.TestCase):
     def test_empty_import_indexes_are_retired_without_removing_depth(self) -> None:
-        web = ROOT / "playbooks/web"
         for name in ("api-tools.md", "cloud.md", "cms.md", "http-attacks.md", "web-attacks.md"):
-            self.assertFalse((web / name).exists(), name)
+            self.assertFalse(any(PLAYBOOKS.glob(f"*/{name}")), name)
         for retained in (
-            "api.md",
-            "cloud-aws-cognito.md",
-            "cms-wordpress.md",
-            "http-attacks-request-smuggling-and-http-desync.md",
-            "http-attacks-tls-attacks.md",
+            "api/api.md",
+            "authentication/cloud-aws-cognito.md",
+            "cms/cms-wordpress.md",
+            "http-desync/http-attacks-request-smuggling-and-http-desync.md",
+            "deployment/http-attacks-tls-attacks.md",
         ):
-            self.assertTrue((web / retained).is_file(), retained)
+            self.assertTrue((PLAYBOOKS / retained).is_file(), retained)
 
     def test_reviewed_gap_cards_exist_and_follow_safe_contract(self) -> None:
-        catalog = (MODERN / "_catalog.md").read_text(encoding="utf-8")
-        for name in sorted(REQUIRED_MODERN):
-            text = (MODERN / name).read_text(encoding="utf-8")
+        catalog = (PLAYBOOKS / "_catalog.md").read_text(encoding="utf-8")
+        for name in sorted(REQUIRED_TOPICS):
+            text = (PLAYBOOKS / name).read_text(encoding="utf-8")
             self.assertIn(f"`{name}`", catalog, name)
             for section in (
                 "## Threat model",
@@ -57,7 +56,7 @@ class RecommendedCoverageTests(unittest.TestCase):
             self.assertGreaterEqual(len(sources), 2, name)
 
     def test_missing_language_sink_packs_are_routable(self) -> None:
-        catalog = (CODE / "_catalog.md").read_text(encoding="utf-8")
+        catalog = (PLAYBOOKS / "_catalog.md").read_text(encoding="utf-8")
         for name in sorted(REQUIRED_CODE):
             text = (CODE / name).read_text(encoding="utf-8")
             self.assertIn(name, catalog, name)
@@ -66,20 +65,20 @@ class RecommendedCoverageTests(unittest.TestCase):
             self.assertIn("## Sources", text, name)
 
     def test_high_risk_imported_notes_bridge_to_focused_reviewed_cards(self) -> None:
-        catalog = (ROOT / "playbooks/web/_catalog.md").read_text(encoding="utf-8")
+        catalog = (PLAYBOOKS / "_catalog.md").read_text(encoding="utf-8")
         expected = {
-            "csrf.md": "browser-request-integrity-policy.md",
-            "cors.md": "browser-request-integrity-policy.md",
-            "jwt.md": "token-jose-verification-boundaries.md",
-            "parameter-pollution.md": "request-parameter-authority-differentials.md",
-            "http-attacks-host-header.md": "request-parameter-authority-differentials.md",
-            "http-attacks-crlf-injection-and-response-splitting.md": "request-parameter-authority-differentials.md",
-            "os-command-injection.md": "command-directory-entity-injection.md",
-            "ldap-injections.md": "command-directory-entity-injection.md",
-            "xxe.md": "command-directory-entity-injection.md",
+            "request-integrity/csrf.md": "request-integrity/README.md",
+            "request-integrity/cors.md": "request-integrity/README.md",
+            "jwt-jose/jwt.md": "jwt-jose/README.md",
+            "request-parsing/parameter-pollution.md": "request-parsing/README.md",
+            "request-parsing/http-attacks-host-header.md": "request-parsing/README.md",
+            "request-parsing/http-attacks-crlf-injection-and-response-splitting.md": "request-parsing/README.md",
+            "command-directory-injection/os-command-injection.md": "command-directory-injection/README.md",
+            "command-directory-injection/ldap-injections.md": "command-directory-injection/README.md",
+            "command-directory-injection/xxe.md": "command-directory-injection/README.md",
         }
         for note, card in expected.items():
-            self.assertIn(f"| `{note}` | `../modern/{card}` |", catalog)
+            self.assertIn(f"`{card}` | `{note}`", catalog)
 
     def test_readme_describes_current_knowledge_and_loop_state(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

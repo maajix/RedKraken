@@ -50,7 +50,7 @@ rate_limit:
   requests_per_second: 10            # global default when enabled (integer or decimal)
   burst: 10                          # token-bucket capacity
   max_concurrency: 4                 # concurrent requests through the scope proxy
-  per_tool:                          # optional overrides; start proxy with matching tool name
+  per_tool:                          # optional tighter overrides; cannot raise global limits
     schemathesis:
       requests_per_second: 2
       burst: 2

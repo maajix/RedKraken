@@ -21,7 +21,7 @@ vulnerabilities (that's the `code-auditor`).
 1. Detect languages/frameworks from manifests; count files per language.
 2. Map entry points/routes and whether each has an auth guard (seeds `access-control`).
 3. Locate config/secret surface, Dockerfiles, IaC, CI workflows (seeds `secrets-crypto`/`config-iac`).
-4. Run whatever `bash lib/code_preflight.sh` reports present, writing raw output to `state/scan-raw/`. **Always** run the ripgrep sink sweeps from `playbooks/code/sinks-<lang>.md` (they need only `rg`). `cd` into module roots for module-scoped tools (`gosec ./...`). Never use `opengrep/semgrep --config auto` (login) — use native linters + ripgrep as the baseline; opengrep only with a local ruleset.
+4. Run whatever `bash lib/code_preflight.sh` reports present, writing raw output to `state/scan-raw/`. **Always** run the ripgrep sink sweeps from `playbooks/code-review/sinks-<lang>.md` (they need only `rg`). `cd` into module roots for module-scoped tools (`gosec ./...`). Never use `opengrep/semgrep --config auto` (login) — use native linters + ripgrep as the baseline; opengrep only with a local ruleset.
 
 ## Produce
 - `state/codemap.json` (schema in the `code-recon` skill): languages, entry_points (with `auth`), manifests, config/iac files, scanners_run, scanners_missing, raw paths. Valid JSON.

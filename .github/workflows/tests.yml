@@ -29,15 +29,19 @@ jobs:
         if: always()
         run: bash tests/test_audit_smoke.sh
 
-      - name: Imported-note coverage gate
+      - name: Project skill discovery regression test
+        if: always()
+        run: python3 tests/test_skill_discovery.py
+
+      - name: Unified playbook catalog gate
         if: always()
         run: |
           python3 scripts/rebuild_catalog.py
-          git diff --exit-code -- playbooks/web/_catalog.md playbooks/web/_sources.tsv
+          git diff --exit-code -- playbooks/_catalog.md playbooks/_sources.tsv
 
-      - name: Modern coverage gate
+      - name: Reviewed topic coverage gate
         if: always()
-        run: bash tests/test_modern_coverage.sh
+        run: bash tests/test_playbook_coverage.sh
 
       - name: Report renderer regression test
         if: always()
@@ -46,6 +50,18 @@ jobs:
       - name: Scope-guard hook regression test
         if: always()
         run: python3 tests/test_scope_guard_hook.py
+
+      - name: Scope-guard deny-path regression test
+        if: always()
+        run: python3 tests/test_scope_guard_block.py
+
+      - name: Rules-of-engagement policy regression test
+        if: always()
+        run: python3 tests/test_roe_policy.py
+
+      - name: VHost direct-traffic policy regression test
+        if: always()
+        run: bash tests/test_vhost_discovery.sh
 
       - name: Completion-guard hook regression test
         if: always()

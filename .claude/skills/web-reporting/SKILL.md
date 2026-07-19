@@ -54,4 +54,7 @@ Qualitative, impact × exploitability. Use CVSS-ish reasoning but state it plain
 
 Findings should carry `title` (crisp, specific heading) and `description` (fuller root-cause narrative) alongside the existing `summary` (TL;DR) — see `web-vuln-hunter`/`code-auditor` agent instructions.
 
-Pull remediation language from the relevant `playbooks/web/<technique>.md` or `playbooks/code/sinks-<lang>.md` so fixes are consistent with the knowledge base. Keep it client-readable: lead with impact, keep payloads/code in reproduction/evidence sections.
+Route through `playbooks/_catalog.md` and pull remediation language from the
+topic `README.md` or `playbooks/code-review/sinks-<lang>.md` so fixes are
+consistent with the knowledge base. Keep it client-readable: lead with impact,
+keep payloads/code in reproduction/evidence sections.

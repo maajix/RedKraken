@@ -32,8 +32,13 @@ def parser() -> argparse.ArgumentParser:
     upsert.add_argument("--json", required=True)
 
     lease = commands.add_parser("lease")
+    lease.add_argument("lead_id", nargs="?")
     lease.add_argument("--worker", required=True)
     lease.add_argument("--lease-seconds", type=int, default=300)
+
+    release = commands.add_parser("release")
+    release.add_argument("lead_id")
+    release.add_argument("--worker", required=True)
 
     complete = commands.add_parser("complete")
     complete.add_argument("lead_id")
@@ -80,7 +85,11 @@ def run(args: argparse.Namespace) -> tuple[Any, int]:
     if args.command == "upsert":
         return store.upsert_lead(json.loads(args.json)), 0
     if args.command == "lease":
+        if args.lead_id:
+            return store.lease_lead(args.lead_id, args.worker, args.lease_seconds), 0
         return store.lease_next(args.worker, args.lease_seconds), 0
+    if args.command == "release":
+        return store.release_lead(args.lead_id, args.worker), 0
     if args.command == "complete":
         return store.complete_lead(args.lead_id, args.worker, args.outcome, args.evidence), 0
     if args.command == "coverage":

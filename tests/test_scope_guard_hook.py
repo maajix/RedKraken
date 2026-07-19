@@ -53,6 +53,21 @@ CASES = [
     ("echo hi\ncurl -s https://evil.other.com/x", {"https://evil.other.com/x"}),
     # url extraction backstop regardless of tool flags
     ("curl -s -d a=b https://evil.other.com/", {"https://evil.other.com/"}),
+    # A recognized loopback proxy is transport, not the request target. The real
+    # destination must remain visible to scope enforcement.
+    ("curl --proxy http://127.0.0.1:18080 https://app.example.com/",
+     {"https://app.example.com/"}),
+    ("curl -x http://localhost:18080 https://app.example.com/",
+     {"https://app.example.com/"}),
+    ("HTTPS_PROXY=http://127.0.0.1:18080 curl https://app.example.com/",
+     {"https://app.example.com/"}),
+    ("env PENTEST_PROXY=http://[::1]:18080 curl https://app.example.com/",
+     {"https://app.example.com/"}),
+    # The exemption is role- and destination-specific: direct loopback targets
+    # and non-loopback proxies are still scope candidates.
+    ("curl http://127.0.0.1:18080/", {"http://127.0.0.1:18080/"}),
+    ("curl --proxy http://proxy.other.net:8080 https://app.example.com/",
+     {"http://proxy.other.net:8080", "https://app.example.com/"}),
 ]
 
 
