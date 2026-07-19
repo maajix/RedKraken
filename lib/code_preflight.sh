@@ -10,7 +10,7 @@
 #   code_preflight.sh --install    auto-install missing dnf/go/pipx/gem tools
 #
 # Design note: /audit degrades gracefully. The real engine is the LLM auditor +
-# the ripgrep sink packs (playbooks/code/) — so only `rg` and `jq` are CORE.
+# the ripgrep sink packs (`playbooks/code-review/`) — so only `rg` and `jq` are CORE.
 # Scanners are optional accelerators; a missing scanner is surfaced as coverage
 # (e.g. "supply-chain family skipped: osv-scanner missing"), never silently
 # skipped. Exit: 0 if all CORE tools present, else 1.

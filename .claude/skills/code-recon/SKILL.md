@@ -37,7 +37,7 @@ Config files (`settings.py`, `application.yml`, `.env*`, `config/*`), Dockerfile
 ## 4. Run the free scanners (leads → `state/scan-raw/`)
 Run whatever `code_preflight` reports present; skip+note the rest. Always run the ripgrep sink sweeps (they need only `rg`). Resolve `OUT="$PENTEST_ENGAGEMENT_DIR/state/scan-raw"` as an absolute path before changing directories. Examples (SRC = resolved source_path):
 ```
-rg -n --no-heading -f <sink patterns from playbooks/code/sinks-<lang>.md> "$SRC"   # always
+rg -n --no-heading -f <sink patterns from playbooks/code-review/sinks-<lang>.md> "$SRC"   # always
 OUT="$PENTEST_ENGAGEMENT_DIR/state/scan-raw"; mkdir -p "$OUT"
 opengrep scan --sarif -o "$OUT/opengrep.sarif" --config <local rules> "$SRC"  # if present + rules available
 njsscan --sarif -o "$OUT/njsscan.sarif" "$SRC"        # Node

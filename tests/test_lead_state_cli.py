@@ -70,6 +70,78 @@ class LeadStateCliTests(unittest.TestCase):
         self.assertTrue(status["allowed"])
         self.assertEqual(status["reasons"], ["converged"])
 
+    def test_lease_can_target_a_known_lead_without_claiming_higher_priority_work(self):
+        high_priority = self.run_cli(
+            "upsert",
+            "--json",
+            json.dumps(
+                {
+                    "family": "client-side",
+                    "kind": "endpoint",
+                    "subject": "https://cli.example.test/high-priority",
+                    "priority": 90,
+                    "provenance": ["recon:parallel-worker"],
+                    "evidence": [],
+                }
+            ),
+        )["lead"]
+        intended = self.run_cli(
+            "upsert",
+            "--json",
+            json.dumps(
+                {
+                    "family": "auth-session",
+                    "kind": "endpoint",
+                    "subject": "https://cli.example.test/intended",
+                    "priority": 60,
+                    "provenance": ["recon:current-worker"],
+                    "evidence": [],
+                }
+            ),
+        )["lead"]
+
+        leased = self.run_cli(
+            "lease", intended["id"], "--worker", "worker-cli"
+        )
+
+        self.assertEqual(leased["id"], intended["id"])
+        snapshot = self.run_cli("snapshot")
+        leads = {lead["id"]: lead for lead in snapshot["leads"]}
+        self.assertEqual(leads[intended["id"]]["status"], "leased")
+        self.assertEqual(leads[high_priority["id"]]["status"], "queued")
+
+    def test_release_immediately_returns_an_accidental_lease_to_the_queue(self):
+        self.run_cli("configure", "--max-attempts", "1")
+        lead = self.run_cli(
+            "upsert",
+            "--json",
+            json.dumps(
+                {
+                    "family": "client-side",
+                    "kind": "endpoint",
+                    "subject": "https://cli.example.test/accidental",
+                    "priority": 90,
+                    "provenance": ["recon:parallel-worker"],
+                    "evidence": [],
+                }
+            ),
+        )["lead"]
+        self.run_cli("lease", "--worker", "wrong-worker")
+
+        released = self.run_cli(
+            "release", lead["id"], "--worker", "wrong-worker"
+        )
+
+        self.assertEqual(released["id"], lead["id"])
+        self.assertEqual(released["status"], "queued")
+        self.assertEqual(released["attempts"], 0)
+        self.assertNotIn("lease_owner", released)
+        self.assertNotIn("lease_until", released)
+        reclaimed = self.run_cli(
+            "lease", lead["id"], "--worker", "right-worker"
+        )
+        self.assertEqual(reclaimed["id"], lead["id"])
+
     def test_status_uses_nonzero_exit_when_work_remains(self):
         status = self.run_cli("status", expected=3)
         self.assertFalse(status["allowed"])

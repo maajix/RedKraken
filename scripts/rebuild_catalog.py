@@ -1,27 +1,93 @@
 #!/usr/bin/env python3
-"""Rebuild playbooks/web/_catalog.md and reconcile _sources.tsv from the actual
-curated *.md front-matter.
+"""Rebuild the unified topic-module playbook catalog and source manifest.
 
 The importer (curate_kb.py) is a one-shot: its Notion source is gone and it must
-not be re-run against playbooks/web/. From here the curated files are the source
-of truth and are hand-maintained (merged, scrubbed, retired). This script keeps
-the routing catalog and coverage manifest consistent with whatever files exist,
-so hand-curation no longer drifts from the catalog. Idempotent; safe to re-run.
+not be re-run against the curated notes. Topic directories are the source of
+truth: README.md is the reviewed interface and sibling Markdown files are
+imported operator depth. This script keeps the single routing interface aligned
+with that layout. Idempotent; safe to re-run.
 
 Run:  python3 scripts/rebuild_catalog.py
 """
 import csv
 import json
-import os
 import re
+from pathlib import Path
 
-WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "playbooks", "web")
+ROOT = Path(__file__).resolve().parents[1]
+PLAYBOOKS = ROOT / "playbooks"
+CODE_REVIEW = PLAYBOOKS / "code-review"
 
 SKILL_FAMILIES = {"injection", "auth-session", "http-protocol", "ssrf-xxe-file",
                   "deserialization", "client-side", "access-control", "agentic-ai"}
 
-# web slug -> reviewed modern card (prefer for methodology; web note is payload depth)
+# Reviewed card id -> operator-facing topic module. Storage follows the stable
+# subject a caller searches for rather than the card's provenance or vintage.
+TOPIC_BY_CARD = {
+    "agentic-mcp-trust-boundaries": "agentic-ai",
+    "api-inventory-resource-consumption": "api",
+    "api-stateful-business-logic": "api-authorization",
+    "attack-surface-architecture-mapping": "attack-surface",
+    "authentication-mfa-recovery-lifecycle": "authentication",
+    "browser-messaging-dom-clobbering": "browser-messaging",
+    "browser-policy-framing": "browser-framing",
+    "browser-realtime-xsleaks": "browser-realtime",
+    "browser-request-integrity-policy": "request-integrity",
+    "browser-script-execution-contexts": "browser-script",
+    "browser-storage-client-templates": "browser-storage",
+    "client-side-path-traversal": "client-side-path-traversal",
+    "cms-extension-platform-boundaries": "cms",
+    "command-directory-entity-injection": "command-directory-injection",
+    "cookie-parser-differentials": "cookies",
+    "deployment-configuration-exposure": "deployment",
+    "exceptional-condition-security": "exceptional-conditions",
+    "external-resource-ownership": "external-resources",
+    "file-upload-processing-boundaries": "file-upload",
+    "framework-routing-trust-boundaries": "routing",
+    "graphql-authorization-cost": "graphql",
+    "grpc-streaming-authorization": "grpc",
+    "http2-desync": "http-desync",
+    "identity-parser-differentials": "identity-parsing",
+    "identity-provisioning-role-lifecycle": "identity-lifecycle",
+    "information-disclosure-debug-artifacts": "information-disclosure",
+    "nosql-operator-injection": "nosql-injection",
+    "oauth-security-bcp": "oauth",
+    "orm-relational-filter-leaks": "orm",
+    "race-conditions-state-machines": "race-conditions",
+    "realtime-sse-webrtc-authorization": "realtime",
+    "relational-query-boundaries": "sql-injection",
+    "request-parameter-authority-differentials": "request-parsing",
+    "secrets-cryptographic-controls": "secrets",
+    "security-logging-alerting": "logging",
+    "server-file-resolution-boundaries": "file-resolution",
+    "software-supply-chain-integrity": "supply-chain",
+    "spreadsheet-formula-injection": "spreadsheet-injection",
+    "ssti-error-oracles": "ssti",
+    "structured-interpreter-injection": "structured-injection",
+    "token-jose-verification-boundaries": "jwt-jose",
+    "transaction-integrity-payment-workflows": "payment-workflows",
+    "untrusted-data-deserialization": "deserialization",
+    "url-parser-ssrf-routing": "ssrf-url-routing",
+    "web-cache-normalization": "web-cache",
+    "webauthn-passkeys": "webauthn",
+    "webhook-event-authenticity": "webhooks",
+    "workload-nonhuman-identity-lifecycle": "workload-identities",
+}
+
+# Imported note slug -> reviewed topic card (methodology first, operator depth second).
 MODERN_XREF = {
+    "auto-scanners": "attack-surface-architecture-mapping",
+    "broken-link-hijacking": "external-resource-ownership",
+    "cves": "attack-surface-architecture-mapping",
+    "dangling-markup": "browser-script-execution-contexts",
+    "ffuf": "attack-surface-architecture-mapping",
+    "http-attacks-tls-attacks": "deployment-configuration-exposure",
+    "rate-limit-bypass": "api-inventory-resource-consumption",
+    "shells": "command-directory-entity-injection",
+    "smtp-header-injection": "structured-interpreter-injection",
+    "type-juggling": "authentication-mfa-recovery-lifecycle",
+    "uuids": "api-stateful-business-logic",
+    "waf-bypasses": "request-parameter-authority-differentials",
     "xxe": "command-directory-entity-injection",
     "xpath-injections": "structured-interpreter-injection",
     "ldap-injections": "command-directory-entity-injection",
@@ -89,6 +155,8 @@ MODERN_XREF = {
 }
 
 FM_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
+TOPIC_REFS_BEGIN = "<!-- BEGIN GENERATED TOPIC REFERENCES -->"
+TOPIC_REFS_END = "<!-- END GENERATED TOPIC REFERENCES -->"
 
 
 def parse_fm(text):
@@ -108,18 +176,55 @@ def parse_fm(text):
     return fm
 
 
-def load_playbooks():
-    out = []
-    for fn in sorted(os.listdir(WEB)):
-        if not fn.endswith(".md") or fn.startswith("_"):
+def load_reviewed_topics():
+    topics = []
+    for path in sorted(PLAYBOOKS.glob("*/README.md")):
+        if path.parent == CODE_REVIEW:
             continue
-        slug = fn[:-3]
-        fm = parse_fm(open(os.path.join(WEB, fn), encoding="utf-8").read())
+        fm = parse_fm(path.read_text(encoding="utf-8"))
+        if fm.get("review_status") != "source-reviewed":
+            raise ValueError(f"{path.relative_to(ROOT)}: topic README must be source-reviewed")
+        raw_id = fm.get("id")
+        card_id = raw_id.removeprefix("modern-") if isinstance(raw_id, str) else raw_id
+        expected_topic = TOPIC_BY_CARD.get(card_id)
+        if expected_topic != path.parent.name:
+            raise ValueError(
+                f"{path.relative_to(ROOT)}: id {raw_id!r} maps to {expected_topic!r}"
+            )
+        topics.append({
+            "topic": path.parent.name,
+            "id": card_id,
+            "title": fm.get("title", card_id),
+            "family": fm.get("family", "misc"),
+            "path": path.relative_to(PLAYBOOKS).as_posix(),
+        })
+    return topics
+
+
+def load_imported_playbooks():
+    out = []
+    for path in sorted(PLAYBOOKS.glob("*/*.md")):
+        if path.name == "README.md" or path.parent == CODE_REVIEW:
+            continue
+        slug = path.stem
+        fm = parse_fm(path.read_text(encoding="utf-8"))
+        if fm.get("review_status") != "imported-unreviewed":
+            continue
+        card = MODERN_XREF.get(slug)
+        if not card:
+            raise ValueError(f"{path.relative_to(ROOT)}: missing reviewed topic mapping")
+        expected_topic = TOPIC_BY_CARD[card]
+        if path.parent.name != expected_topic:
+            raise ValueError(
+                f"{path.relative_to(ROOT)}: expected topic {expected_topic!r}"
+            )
         tags = fm.get("tags") or []
         if isinstance(tags, str):
             tags = [t.strip() for t in tags.split(",") if t.strip()]
         out.append({
             "slug": slug,
+            "topic": path.parent.name,
+            "path": path.relative_to(PLAYBOOKS).as_posix(),
             "technique": fm.get("technique", slug),
             "family": fm.get("family", "misc"),
             "severity": fm.get("severity_hint", "medium"),
@@ -133,54 +238,123 @@ def safe_table(v):
     return str(v).replace("|", "\\|").replace("\n", " ")
 
 
-def write_catalog(pbs):
+def load_sink_packs():
+    packs = []
+    for path in sorted(CODE_REVIEW.glob("sinks-*.md")):
+        text = path.read_text(encoding="utf-8")
+        title = re.search(r"(?m)^# (.+)$", text)
+        packs.append({
+            "language": path.stem.removeprefix("sinks-"),
+            "title": title.group(1) if title else path.stem,
+            "path": path.relative_to(PLAYBOOKS).as_posix(),
+        })
+    return packs
+
+
+def sync_topic_readmes(topics, pbs):
+    refs_by_topic = {}
+    for playbook in pbs:
+        refs_by_topic.setdefault(playbook["topic"], []).append(playbook)
+    block_re = re.compile(
+        rf"\n*{re.escape(TOPIC_REFS_BEGIN)}.*?{re.escape(TOPIC_REFS_END)}\n*",
+        re.DOTALL,
+    )
+    for topic in topics:
+        path = PLAYBOOKS / topic["path"]
+        text = block_re.sub("\n\n", path.read_text(encoding="utf-8")).rstrip() + "\n"
+        refs = sorted(
+            refs_by_topic.get(topic["topic"], []),
+            key=lambda item: item["technique"].lower(),
+        )
+        if not refs:
+            path.write_text(text, encoding="utf-8")
+            continue
+        lines = [
+            TOPIC_REFS_BEGIN,
+            "## Imported operator references",
+            "",
+            "These sibling notes provide payload and command depth. They remain",
+            "`imported-unreviewed`; validate commands and prose before use.",
+            "",
+        ]
+        for ref in refs:
+            lines.append(
+                f"- [{ref['technique']}]({Path(ref['path']).name}) — "
+                f"severity hint: {ref['severity']}"
+            )
+        lines.append(TOPIC_REFS_END)
+        source_heading = "\n## Sources\n"
+        if source_heading not in text:
+            raise ValueError(f"{path.relative_to(ROOT)}: missing Sources section")
+        before, sources = text.split(source_heading, 1)
+        path.write_text(
+            before.rstrip()
+            + "\n\n"
+            + "\n".join(lines)
+            + "\n\n## Sources\n"
+            + sources.lstrip(),
+            encoding="utf-8",
+        )
+
+
+def write_catalog(topics, pbs, sinks):
     by_fam = {}
     for p in pbs:
         by_fam.setdefault(p["family"], []).append(p)
-    lines = ["# Web Playbook Catalog — signal → technique → playbook", "",
-             "Routing table for triage and hunters. Families with a dedicated hunting "
-             "skill are marked ✅; others are reference playbooks the recon-agent / "
-             "hunters consult opportunistically.", "",
-             f"**{len(pbs)} playbooks across {len(by_fam)} families.**", "",
-             "> Generated by `scripts/rebuild_catalog.py` from each note's front-matter. "
-             "Do not edit by hand; re-run the script after adding, merging, or retiring a playbook.", ""]
-
-    xref = [(p, MODERN_XREF[p["slug"]]) for p in pbs if p["slug"] in MODERN_XREF]
-    if xref:
-        lines += ["## Reviewed cards (prefer these for methodology)", "",
-                  "For these techniques a source-reviewed, non-destructive-by-default card "
-                  "exists under `../modern/`. Read it first for the test approach; use the "
-                  "imported web note below for payload/command depth.", "",
-                  "| web note | reviewed card |", "|---|---|"]
-        for p, card in sorted(xref, key=lambda x: x[0]["slug"]):
-            lines.append(f"| `{p['slug']}.md` | `../modern/{card}.md` |")
-        lines.append("")
+    refs_by_topic = {}
+    for p in pbs:
+        refs_by_topic.setdefault(p["topic"], []).append(p)
+    lines = ["# Playbook Catalog — signal → topic → playbook", "",
+             "One routing interface for black-box methodology, imported operator depth, "
+             "and white-box sink packs. Open a topic's `README.md` first; consult sibling "
+             "notes only when the reviewed interface routes you there.", "",
+             f"**{len(topics)} reviewed topics · {len(pbs)} imported references · "
+             f"{len(sinks)} code sink packs.**", "",
+             "> Generated by `scripts/rebuild_catalog.py`. Do not edit by hand.", "",
+             "## Topic entrypoints", "",
+             "| topic | family | reviewed methodology | imported depth |",
+             "|---|---|---|---|"]
+    for topic in sorted(topics, key=lambda item: item["topic"]):
+        refs = sorted(refs_by_topic.get(topic["topic"], []), key=lambda item: item["slug"])
+        ref_links = ", ".join(f"`{item['path']}`" for item in refs) or "—"
+        lines.append(
+            f"| {topic['topic']} | {topic['family']} | `{topic['path']}` | {ref_links} |"
+        )
+    lines.append("")
 
     for fam in sorted(by_fam, key=lambda k: (k not in SKILL_FAMILIES, k)):
         mark = "✅ skill" if fam in SKILL_FAMILIES else "📄 reference"
         rows = sorted(by_fam[fam], key=lambda p: p["technique"].lower())
-        lines += [f"## {fam}  ({mark})  — {len(rows)} playbooks", "",
-                  "| technique | severity | playbook | tags |", "|---|---|---|---|"]
+        lines += [f"## {fam}  ({mark})  — {len(rows)} imported references", "",
+                  "| technique | severity | topic | playbook | tags |", "|---|---|---|---|---|"]
         for p in rows:
             lines.append(f"| {safe_table(p['technique'])} | {p['severity']} | "
-                         f"`{p['slug']}.md` | {safe_table(', '.join(p['tags'][:5]))} |")
+                         f"`{p['topic']}/README.md` | `{p['path']}` | "
+                         f"{safe_table(', '.join(p['tags'][:5]))} |")
         lines.append("")
 
-    open(os.path.join(WEB, "_catalog.md"), "w", encoding="utf-8").write("\n".join(lines).rstrip() + "\n")
-    return len(pbs), len(by_fam)
+    lines += ["## White-box code review", "",
+              "Start with `code-review/README.md`, then load the language pack.", "",
+              "| language | sink pack |", "|---|---|"]
+    for sink in sinks:
+        lines.append(f"| {sink['language']} | `{sink['path']}` |")
+    lines.append("")
+
+    (PLAYBOOKS / "_catalog.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return len(topics), len(pbs), len(sinks), len(by_fam)
 
 
 def reconcile_sources(pbs):
-    path = os.path.join(WEB, "_sources.tsv")
-    if not os.path.isfile(path):
+    path = PLAYBOOKS / "_sources.tsv"
+    if not path.is_file():
         return 0
     slugs = {p["slug"] for p in pbs}
-    with open(path, encoding="utf-8", newline="") as f:
+    with path.open(encoding="utf-8", newline="") as f:
         rows = list(csv.reader(f, delimiter="\t"))
     header, body = rows[0], rows[1:]
     kept = [r for r in body if r and r[0] in slugs]
     dropped = [r[0] for r in body if r and r[0] not in slugs]
-    with open(path, "w", encoding="utf-8", newline="") as f:
+    with path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n", quoting=csv.QUOTE_MINIMAL)
         w.writerow(header)
         for r in kept:
@@ -189,10 +363,16 @@ def reconcile_sources(pbs):
 
 
 def main():
-    pbs = load_playbooks()
-    n, fams = write_catalog(pbs)
+    topics = load_reviewed_topics()
+    pbs = load_imported_playbooks()
+    sinks = load_sink_packs()
+    sync_topic_readmes(topics, pbs)
+    topic_count, imported_count, sink_count, fams = write_catalog(topics, pbs, sinks)
     dropped = reconcile_sources(pbs)
-    print(f"catalog: {n} playbooks across {fams} families")
+    print(
+        f"catalog: {topic_count} reviewed topics, {imported_count} imported references, "
+        f"{sink_count} sink packs across {fams} families"
+    )
     if dropped:
         print(f"_sources.tsv: dropped {len(dropped)} orphan rows: {dropped}")
 

@@ -21,7 +21,7 @@ skip).
 - **A finding is `confirmed` only with a traced source→sink path and real
   `file:line` you actually read.** No traced path ⇒ `suspected`. Never invent
   line numbers. (This is the anti-hallucination guardrail — enforce it.)
-- **Two lead types** (see `playbooks/code/_catalog.md`):
+- **Two lead types** (see `playbooks/_catalog.md`):
   - *Trace families* (injection, client-side, ssrf-xxe-file, deserialization,
     auth-session, http-protocol, access-control): scanner/grep hits are leads →
     the auditor must trace before confirming.
@@ -52,7 +52,7 @@ You (the orchestrator) are the sole writer. As each sub-agent returns its summar
 Dispatch the **`code-mapper`** agent (Task tool) with the engagement dir. It follows `code-recon` and writes `state/codemap.json` + `state/scan-raw/*`. Wait for its summary and fold its environment facts (languages/frameworks, entry-point auth, dependency manifests) into `state/notes.md`. Update `loop.json` → `phase: triage`.
 
 ## Phase 2 — Triage (you, the orchestrator)
-1. Read `state/codemap.json` and every file under `state/scan-raw/` (parse SARIF/JSON with `jq`), plus `playbooks/code/_catalog.md`.
+1. Read `state/codemap.json` and every file under `state/scan-raw/` (parse SARIF/JSON with `jq`), plus `playbooks/_catalog.md`.
 2. **Normalize + dedup** scanner leads → `{family, file, line, rule, severity, tool}`. Route each to a family via the catalog. Dedup on `family+file+line+rule`.
 3. Split by lead type:
    - *Scanner-native* leads (supply-chain/secrets/config-iac) → stage them as `suspected` rows for the matching family auditor to validate and record.
@@ -63,8 +63,8 @@ Dispatch the **`code-mapper`** agent (Task tool) with the engagement dir. It fol
 For each family with work, dispatch a **`code-auditor`** (Task tool) with the engagement dir + family + its worklist slice. Families are independent → dispatch them **in parallel** (multiple Task calls in one message).
 
 Each auditor runs analyse→trace→confirm per candidate:
-> open the family's `playbooks/code/sinks-<lang>.md`, matching family skill, and
-> source-reviewed modern card → run the ripgrep sweep for its sinks → **read the
+> open the family's `playbooks/code-review/sinks-<lang>.md`, matching family skill, and
+> source-reviewed topic `README.md` → run the ripgrep sweep for its sinks → **read the
 > code and trace back to a request-controlled source** → confirm (reachable
 > source→sink, no sanitizer) / reject / mark suspected → capture the `file:line`
 > data-flow path + code excerpt as evidence → record it in `findings.jsonl`.
@@ -95,7 +95,7 @@ For scanner-native families the auditor validates the staged scanner rows (drop 
    gates and scope checks. Set `target_link` and update the evidence-backed status.
 3. **Prove the runtime, not the source.** Grey-box confirmation observes the
    *deployed* behavior — it does not infer it (see the two-lens filter in
-   `playbooks/code/_catalog.md`):
+   `playbooks/_catalog.md`):
    - **Container user:** `docker exec` gives a **root shell regardless** of what
      the app runs as. Read `/proc/1/status` `Uid:` (real/effective/saved) of the
      actual app process. `Uid: 0 2000 0 2000` = effective-dropped but **saved-uid

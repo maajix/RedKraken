@@ -142,6 +142,47 @@ class RoeAuthorizationTests(unittest.TestCase):
                 with self.assertRaises(ConfigError):
                     self.load(fragment)
 
+    def test_per_tool_rate_policy_can_only_tighten_global_limits(self) -> None:
+        config = self.load(
+            "rate_limit_enabled: true\n"
+            "rate_limit:\n"
+            "  requests_per_second: 5\n"
+            "  burst: 5\n"
+            "  max_concurrency: 2\n"
+            "  per_tool:\n"
+            "    nuclei:\n"
+            "      requests_per_second: 20\n"
+            "      burst: 10\n"
+            "      max_concurrency: 8\n"
+        )
+        self.assertEqual(
+            harness_config.rate_policy(config, "nuclei"),
+            {"requests_per_second": 5.0, "burst": 5, "max_concurrency": 2},
+        )
+
+    def test_direct_request_contract_serializes_rate_limited_work_and_applies_headers(self) -> None:
+        documents = {
+            "loop": ROOT / ".claude/skills/web-pentest-loop/SKILL.md",
+            "hunter": ROOT / ".claude/agents/web-vuln-hunter.md",
+            "recon": ROOT / ".claude/agents/recon-agent.md",
+            "scope": ROOT / ".claude/skills/scope-guard/SKILL.md",
+        }
+        text = {
+            name: path.read_text(encoding="utf-8").casefold()
+            for name, path in documents.items()
+        }
+        self.assertIn("dispatch one family at a time", text["loop"])
+        self.assertIn("required_headers", text["loop"])
+        self.assertIn("proxy environment", text["loop"])
+        for name in ("hunter", "recon"):
+            with self.subTest(document=name):
+                self.assertIn("required_headers", text[name])
+                self.assertIn("one target-touching tool", text[name])
+                self.assertIn("tool-native header", text[name])
+                self.assertIn("not-tested", text[name])
+        self.assertIn("required_headers", text["scope"])
+        self.assertIn("one worker", text["scope"])
+
 
 if __name__ == "__main__":
     unittest.main()

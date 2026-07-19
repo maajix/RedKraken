@@ -38,9 +38,16 @@ If the target list or the `intent` is missing, empty, contradictory, or you are 
   proof or record `status: exploitable-not-detonated`. Never include a live secret
   in a proposed command or finding.
 - **Rate limiting is opt-in.** If and only if `rate_limit_enabled: true`, enforce
-  `rate_limit` through `scripts/start_scope_proxy.sh` and compatible tool flags.
-  Global RPS/burst/concurrency and `per_tool` overrides are supported. When the
-  switch is absent or false, do not silently apply the example values.
+  `rate_limit` through `scripts/start_scope_proxy.sh` for browser/schema wrappers
+  and compatible native flags for direct CLI tools. Direct rate-limited work is
+  serialized; a tool without a reliable RPS flag uses one worker plus a delay of
+  at least `1 / rps` seconds. `per_tool` overrides may only tighten the global
+  RPS/burst/concurrency limits. When the switch is absent or false, do not
+  silently apply the example values.
+- **`required_headers`** → apply every configured entry to every in-scope HTTP
+  request. The scope proxy injects them for proxied browser/schema workflows.
+  Direct CLI tools must use their tool-native header option; if a tool cannot
+  apply all mandatory headers, do not send the request and record `not-tested`.
 - **`max_threads`** is a legacy concurrency hint, not permission for high load.
 - **`time_window`** → if set and now is outside it, stop.
 - Respect `out_of_scope` even for OOB/callback hosts; use `oob_host` from the config for blind callbacks.

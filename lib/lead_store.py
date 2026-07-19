@@ -363,7 +363,12 @@ class LeadState:
             lead["status"] = "exhausted" if lead["attempts"] >= max_attempts else "queued"
             lead["updated_at"] = current.isoformat().replace("+00:00", "Z")
 
-    def lease_next(self, worker: str, lease_seconds: int = 300) -> dict[str, Any] | None:
+    def _lease(
+        self,
+        worker: str,
+        lease_seconds: int,
+        lead_id: str | None,
+    ) -> dict[str, Any] | None:
         owner = self._worker(worker)
         if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 1 <= lease_seconds <= 86400:
             raise LeadStateError("lease_seconds must be an integer from 1 through 86400")
@@ -374,18 +379,61 @@ class LeadState:
         def operation(state: dict[str, Any]) -> dict[str, Any] | None:
             self._recover_stale(state, current)
             max_attempts = state["loop"]["max_attempts"]
-            candidates = [
-                lead
-                for lead in state["leads"]
-                if lead["status"] == "queued" and lead["attempts"] < max_attempts
-            ]
-            if not candidates:
-                return None
-            lead = sorted(candidates, key=lambda item: (-item["priority"], item["id"]))[0]
+            if lead_id is None:
+                candidates = [
+                    lead
+                    for lead in state["leads"]
+                    if lead["status"] == "queued" and lead["attempts"] < max_attempts
+                ]
+                if not candidates:
+                    return None
+                lead = sorted(
+                    candidates, key=lambda item: (-item["priority"], item["id"])
+                )[0]
+            else:
+                lead = next(
+                    (item for item in state["leads"] if item["id"] == lead_id), None
+                )
+                if lead is None:
+                    raise LeadStateError(f"unknown lead id: {lead_id}")
+                if lead["status"] == "leased" and lead.get("lease_owner") == owner:
+                    return lead
+                if lead["status"] != "queued" or lead["attempts"] >= max_attempts:
+                    raise LeadStateError(f"lead is not available to lease: {lead_id}")
             lead["status"] = "leased"
             lead["attempts"] += 1
             lead["lease_owner"] = owner
             lead["lease_until"] = lease_until
+            lead["updated_at"] = timestamp
+            return lead
+
+        return self._mutate(operation)
+
+    def lease_next(self, worker: str, lease_seconds: int = 300) -> dict[str, Any] | None:
+        return self._lease(worker, lease_seconds, None)
+
+    def lease_lead(
+        self, lead_id: str, worker: str, lease_seconds: int = 300
+    ) -> dict[str, Any]:
+        leased = self._lease(worker, lease_seconds, lead_id)
+        if leased is None:  # Targeted leasing either returns the lead or raises.
+            raise LeadStateError(f"lead is not available to lease: {lead_id}")
+        return leased
+
+    def release_lead(self, lead_id: str, worker: str) -> dict[str, Any]:
+        owner = self._worker(worker)
+        timestamp = self._now()
+
+        def operation(state: dict[str, Any]) -> dict[str, Any]:
+            lead = next((item for item in state["leads"] if item["id"] == lead_id), None)
+            if lead is None:
+                raise LeadStateError(f"unknown lead id: {lead_id}")
+            if lead.get("status") != "leased" or lead.get("lease_owner") != owner:
+                raise LeadStateError("lead must be held by the lease owner")
+            lead["status"] = "queued"
+            lead["attempts"] = max(0, lead["attempts"] - 1)
+            lead.pop("lease_owner", None)
+            lead.pop("lease_until", None)
             lead["updated_at"] = timestamp
             return lead
 

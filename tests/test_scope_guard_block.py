@@ -77,6 +77,31 @@ CASES = [
     # to static analysis -> fail closed (targetless block), prefix or not.
     ("variable-target network command blocked", 'curl "$URL"', GOOD_ENGAGEMENT, True),
     ("sudo variable-target network command blocked", 'sudo nmap "$URL"', GOOD_ENGAGEMENT, True),
+    # Loopback scope-proxy endpoints are transport, not targets. These mirror
+    # direct CLI and documented wrapper invocations while preserving fail-closed
+    # checks for the actual destination and for arbitrary proxies.
+    ("in-scope curl through loopback proxy allowed",
+     "curl --proxy http://127.0.0.1:18080 https://app.example.com/",
+     GOOD_ENGAGEMENT, False),
+    ("inline loopback proxy env allowed",
+     "HTTPS_PROXY=http://127.0.0.1:18080 curl https://app.example.com/",
+     GOOD_ENGAGEMENT, False),
+    ("documented browser wrapper through loopback proxy allowed",
+     "bash scripts/browser_capture.sh engagements/acme https://app.example.com owner "
+     "--proxy http://127.0.0.1:18080",
+     GOOD_ENGAGEMENT, False),
+    ("documented schemathesis wrapper through loopback proxy allowed",
+     "PENTEST_PROXY=http://127.0.0.1:18080 bash scripts/run_schemathesis.sh "
+     "engagements/acme ./openapi.yaml https://api.example.com",
+     GOOD_ENGAGEMENT, False),
+    ("out-of-scope target through loopback proxy blocked",
+     "curl --proxy http://127.0.0.1:18080 https://evil.other.org/",
+     GOOD_ENGAGEMENT, True),
+    ("direct loopback target remains blocked",
+     "curl http://127.0.0.1:18080/", GOOD_ENGAGEMENT, True),
+    ("non-loopback proxy remains blocked",
+     "curl --proxy http://proxy.other.net:8080 https://app.example.com/",
+     GOOD_ENGAGEMENT, True),
 ]
 
 

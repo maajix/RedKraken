@@ -161,7 +161,7 @@ def _validate_rate_limit(value: Any, name: str) -> None:
 
 
 def rate_policy(config: dict[str, Any], tool: str = "") -> dict[str, float | int] | None:
-    """Return the active rate policy, or None unless explicitly enabled."""
+    """Return the active rate policy; per-tool values may only tighten it."""
     if config.get("rate_limit_enabled") is not True:
         return None
     raw = config.get("rate_limit")
@@ -173,18 +173,27 @@ def rate_policy(config: dict[str, Any], tool: str = "") -> dict[str, float | int
         }
     if not isinstance(raw, dict):
         raise ConfigError("rate_limit is required when rate_limit_enabled is true")
-    selected = dict(raw)
-    selected.pop("per_tool", None)
+    base_rps = _positive_number(raw.get("requests_per_second"), "rate_limit.requests_per_second")
+    base_burst = int(raw.get("burst", max(1, int(base_rps))))
+    base_concurrency = int(raw.get("max_concurrency", config.get("max_threads") or 1))
     override = (raw.get("per_tool") or {}).get(tool) if tool else None
-    if override:
-        selected.update(override)
-    rps = _positive_number(selected.get("requests_per_second"), "rate_limit.requests_per_second")
-    burst = selected.get("burst", max(1, int(rps)))
-    concurrency = selected.get("max_concurrency", config.get("max_threads") or 1)
+    if not override:
+        return {
+            "requests_per_second": base_rps,
+            "burst": base_burst,
+            "max_concurrency": base_concurrency,
+        }
+    override_rps = _positive_number(
+        override.get("requests_per_second", base_rps),
+        f"rate_limit.per_tool.{tool}.requests_per_second",
+    )
     return {
-        "requests_per_second": rps,
-        "burst": int(burst),
-        "max_concurrency": int(concurrency),
+        "requests_per_second": min(base_rps, override_rps),
+        "burst": min(base_burst, int(override.get("burst", base_burst))),
+        "max_concurrency": min(
+            base_concurrency,
+            int(override.get("max_concurrency", base_concurrency)),
+        ),
     }
 
 

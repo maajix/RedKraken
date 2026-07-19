@@ -15,6 +15,7 @@ DOMAIN="${4,,}"
 WORDLIST="$(realpath "$5")"
 FFUF="${FFUF_BIN:-ffuf}"
 CURL="${CURL_BIN:-curl}"
+SLEEP="${SLEEP_BIN:-sleep}"
 SCOPE="${SCOPE_CHECK_BIN:-$ROOT/lib/scope_check.sh}"
 RAW="$ENGAGEMENT/state/scan-raw"
 mkdir -p "$RAW"
@@ -24,6 +25,44 @@ chmod 700 "$ENGAGEMENT" "$ENGAGEMENT/state" "$RAW"
 "$SCOPE" "$ROUTE_IP" "$ENGAGEMENT" >/dev/null
 [[ "$DOMAIN" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] || { echo "invalid domain" >&2; exit 2; }
 [[ -f "$WORDLIST" && ! -L "$WORDLIST" ]] || { echo "wordlist must be a regular file" >&2; exit 2; }
+
+read -r POLICY_FFUF_RATE CURL_DELAY < <(python3 - "$ROOT" "$ENGAGEMENT/engagement.yaml" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from lib.harness_config import load_engagement, rate_policy
+
+config = load_engagement(sys.argv[2])
+ffuf = rate_policy(config, "ffuf")
+curl = rate_policy(config, "curl")
+ffuf_rate = f'{float(ffuf["requests_per_second"]):g}' if ffuf else ""
+curl_delay = 1.0 / float(curl["requests_per_second"]) if curl else ""
+print(ffuf_rate, curl_delay)
+PY
+)
+
+REQUIRED_HEADER_ARGS=()
+HEADER_FILE="$(mktemp "$RAW/.required-headers.XXXXXX")"
+if ! python3 - "$ROOT" "$ENGAGEMENT/engagement.yaml" > "$HEADER_FILE" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from lib.harness_config import load_engagement
+
+config = load_engagement(sys.argv[2])
+for name, value in (config.get("required_headers") or {}).items():
+    if name.casefold() == "host":
+        raise SystemExit("required_headers Host conflicts with VHost discovery")
+    sys.stdout.write(f"{name}: {value}\0")
+PY
+then
+  rm -f "$HEADER_FILE"
+  exit 2
+fi
+while IFS= read -r -d '' header; do
+  REQUIRED_HEADER_ARGS+=(-H "$header")
+done < "$HEADER_FILE"
+rm -f "$HEADER_FILE"
 
 FILTERED="$RAW/vhost-filtered.txt"
 : > "$FILTERED"
@@ -55,8 +94,10 @@ signature() {
   local host="$1" label="$2"
   local body="$RAW/${label}.body" headers="$RAW/${label}.headers"
   local status size words title location digest
+  if [[ -n "$CURL_DELAY" ]]; then "$SLEEP" "$CURL_DELAY"; fi
   status="$("$CURL" -ksS --max-time 15 --resolve "$host:$PORT:$ROUTE_IP" \
-    -H "Host: $host" -o "$body" -D "$headers" -w '%{http_code}' "$SCHEME://$host:$PORT/")"
+    "${REQUIRED_HEADER_ARGS[@]}" -H "Host: $host" -o "$body" -D "$headers" \
+    -w '%{http_code}' "$SCHEME://$host:$PORT/")"
   chmod 600 "$body" "$headers"
   size="$(wc -c < "$body" | tr -d ' ')"
   words="$(wc -w < "$body" | tr -d ' ')"
@@ -76,17 +117,11 @@ done
 chmod 600 "$CONTROLS"
 
 RATE_ARGS=()
-rate="$(python3 - "$ENGAGEMENT/engagement.yaml" <<'PY'
-import sys, yaml
-c = yaml.safe_load(open(sys.argv[1])) or {}
-r = c.get("rate_limit")
-print(r.get("requests_per_second", "") if c.get("rate_limit_enabled") is True and isinstance(r, dict) else "")
-PY
-)"
-if [[ -n "$rate" ]]; then RATE_ARGS=(-rate "$rate"); fi
+if [[ -n "$POLICY_FFUF_RATE" ]]; then RATE_ARGS=(-rate "$POLICY_FFUF_RATE"); fi
 
 FFUF_JSON="$RAW/vhost-ffuf.json"
-"$FFUF" -u "$BASE_URL" -H 'Host: FUZZ' -w "$FILTERED" -of json -o "$FFUF_JSON" "${RATE_ARGS[@]}"
+"$FFUF" -u "$BASE_URL" "${REQUIRED_HEADER_ARGS[@]}" -H 'Host: FUZZ' \
+  -w "$FILTERED" -of json -o "$FFUF_JSON" "${RATE_ARGS[@]}"
 chmod 600 "$FFUF_JSON"
 RESULTS="$RAW/vhost-results.txt"
 python3 - "$FFUF_JSON" > "$RESULTS" <<'PY'

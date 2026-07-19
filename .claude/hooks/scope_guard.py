@@ -3,13 +3,16 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
 import shlex
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -67,6 +70,12 @@ PREFIX_COMMANDS = {
     "proxychains", "proxychains4",
 }
 ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+PROXY_FLAGS = {"--proxy", "-x"}
+PROXY_ENV_NAMES = {
+    "PENTEST_PROXY",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+    "http_proxy", "https_proxy", "all_proxy",
+}
 
 
 def decision(reason: str, command: str = "") -> None:
@@ -99,6 +108,45 @@ def decision(reason: str, command: str = "") -> None:
 
 def clean_candidate(value: str) -> str:
     return value.strip().strip("\"'").rstrip(",;)")
+
+
+def loopback_proxy_url(value: str) -> str | None:
+    """Return a normalized HTTP(S) proxy URL only when it is loopback."""
+    candidate = clean_candidate(value)
+    try:
+        parsed = urlsplit(candidate)
+        host = parsed.hostname
+        _ = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme.casefold() not in {"http", "https"} or not host:
+        return None
+    if host.rstrip(".").casefold() == "localhost":
+        return candidate
+    try:
+        return candidate if ipaddress.ip_address(host).is_loopback else None
+    except ValueError:
+        return None
+
+
+def loopback_proxy_values(token_lists: list[list[str]]) -> Counter[str]:
+    """Count loopback URLs used specifically as proxy transport values."""
+    proxies: Counter[str] = Counter()
+    for tokens in token_lists:
+        for index, token in enumerate(tokens):
+            value = ""
+            if token in PROXY_FLAGS and index + 1 < len(tokens):
+                value = tokens[index + 1]
+            elif any(token.startswith(f"{flag}=") for flag in PROXY_FLAGS):
+                value = token.split("=", 1)[1]
+            else:
+                name, separator, assigned = token.partition("=")
+                if separator and name in PROXY_ENV_NAMES:
+                    value = assigned
+            proxy = loopback_proxy_url(value) if value else None
+            if proxy:
+                proxies[proxy] += 1
+    return proxies
 
 
 def targets_from_file(value: str) -> list[str]:
@@ -220,7 +268,7 @@ def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
 
 
 def extract(command: str) -> tuple[bool, list[str]]:
-    candidates = [clean_candidate(value) for value in URL_RE.findall(command)]
+    url_candidates = [clean_candidate(value) for value in URL_RE.findall(command)]
     # Scan each newline-separated statement with fresh state so a network tool
     # on one line cannot leak `active_tool` onto the next (which would misread a
     # later dotted filename like `cat out.txt` as a host). If a quoted argument
@@ -237,7 +285,15 @@ def extract(command: str) -> tuple[bool, list[str]]:
         except ValueError as exc:
             if any(re.search(rf"\b{re.escape(tool)}\b", command) for tool in NETWORK_TOOLS):
                 raise ConfigError(f"cannot parse network command: {exc}") from exc
-            return False, list(dict.fromkeys(v for v in candidates if v))
+            return False, list(dict.fromkeys(v for v in url_candidates if v))
+
+    proxy_values = loopback_proxy_values(token_lists)
+    candidates: list[str] = []
+    for value in url_candidates:
+        if proxy_values[value] > 0:
+            proxy_values[value] -= 1
+        else:
+            candidates.append(value)
 
     network_seen = False
     for tokens in token_lists:

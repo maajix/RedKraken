@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FAMILY_ROOT = ROOT / ".claude" / "skills" / "families"
 REGISTRY = FAMILY_ROOT / "registry.json"
-SCENARIOS = ROOT / "playbooks" / "modern" / "scenario-baselines.json"
+SCENARIOS = ROOT / "playbooks" / "_meta" / "scenario-baselines.json"
 
 
 class LoopContractTests(unittest.TestCase):
@@ -48,18 +48,18 @@ class LoopContractTests(unittest.TestCase):
             self.assertLessEqual(set(row["follow_on_families"]), actual, row["family"])
             for playbook in row["playbooks"]:
                 self.assertTrue((ROOT / playbook).is_file(), playbook)
-        routed = {Path(path).name for row in rows for path in row["playbooks"]}
+        routed = {path for row in rows for path in row["playbooks"]}
         self.assertLessEqual(
             {
-                "attack-surface-architecture-mapping.md",
-                "external-resource-ownership.md",
-                "transaction-integrity-payment-workflows.md",
-                "realtime-sse-webrtc-authorization.md",
-                "workload-nonhuman-identity-lifecycle.md",
-                "browser-request-integrity-policy.md",
-                "request-parameter-authority-differentials.md",
-                "token-jose-verification-boundaries.md",
-                "command-directory-entity-injection.md",
+                "playbooks/attack-surface/README.md",
+                "playbooks/external-resources/README.md",
+                "playbooks/payment-workflows/README.md",
+                "playbooks/realtime/README.md",
+                "playbooks/workload-identities/README.md",
+                "playbooks/request-integrity/README.md",
+                "playbooks/request-parsing/README.md",
+                "playbooks/jwt-jose/README.md",
+                "playbooks/command-directory-injection/README.md",
             },
             routed,
         )
@@ -82,9 +82,12 @@ class LoopContractTests(unittest.TestCase):
         loop = (ROOT / ".claude/skills/web-pentest-loop/SKILL.md").read_text(
             encoding="utf-8"
         ).casefold()
-        hunter = (ROOT / ".claude/agents/web-vuln-hunter.md").read_text(
-            encoding="utf-8"
-        ).casefold()
+        hunter = " ".join(
+            (ROOT / ".claude/agents/web-vuln-hunter.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
         for phrase in (
             "derived leads",
             "re-triage",
@@ -100,6 +103,22 @@ class LoopContractTests(unittest.TestCase):
         self.assertNotIn("leads.jsonl", loop)
         self.assertIn("derived leads", hunter)
         self.assertIn("negative evidence", hunter)
+
+    def test_pentest_contract_separates_dispatch_from_derived_lead_handoff(self) -> None:
+        loop = (ROOT / ".claude/skills/web-pentest-loop/SKILL.md").read_text(
+            encoding="utf-8"
+        ).casefold()
+        hunter = " ".join(
+            (ROOT / ".claude/agents/web-vuln-hunter.md")
+            .read_text(encoding="utf-8")
+            .casefold()
+            .split()
+        )
+
+        self.assertIn("lease <lead-id>", loop)
+        self.assertIn("never claim unrelated queued work", loop)
+        self.assertIn("leave derived leads queued", hunter)
+        self.assertIn("do not lease a derived lead", hunter)
 
     def test_scenario_baselines_are_immutable_and_required_by_loop(self) -> None:
         manifest = json.loads(SCENARIOS.read_text(encoding="utf-8"))
