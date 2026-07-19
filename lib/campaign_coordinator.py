@@ -41,6 +41,19 @@ class CampaignCoordinator:
         "api-schema",
     }
     SURFACE_SOURCES = {"recon", "hunter", "bypass", "exploit", "explorer"}
+    BYPASS_PROFILES = {
+        "edge-waf": ("edge", "waf", "normalization", "cdn"),
+        "parser-content-type": ("parser", "content-type", "content_type", "mime", "charset"),
+        "auth-routing": ("authentication", "authorization", "routing", "auth", "session"),
+        "ratelimit-workflow": (
+            "rate-limit",
+            "ratelimit",
+            "rate_limit",
+            "throttling",
+            "workflow",
+            "workflow-state",
+        ),
+    }
     SURFACE_METHODS = {
         "host": BASELINE_METHODS,
         "virtual-host": BASELINE_METHODS,
@@ -289,6 +302,127 @@ class CampaignCoordinator:
             "observation_id": stored["observation"]["id"],
         }
 
+    @classmethod
+    def _applicable_profile(cls, control: str) -> str | None:
+        needle = control.strip().casefold()
+        for profile, synonyms in cls.BYPASS_PROFILES.items():
+            if needle == profile or needle in synonyms:
+                return profile
+        return None
+
+    def _apply_resisted(self, payload: Any) -> dict[str, Any]:
+        required = {
+            "lead_id",
+            "control",
+            "standard_techniques",
+            "positive_control",
+            "negative_control",
+            "environment_facts",
+            "authorized_profiles",
+            "safety_requirements",
+        }
+        if not isinstance(payload, dict) or set(payload) != required:
+            raise CampaignEventError(
+                "hypothesis.resisted payload fields do not match the contract"
+            )
+        lead_id = payload["lead_id"]
+        control = payload["control"]
+        if not isinstance(lead_id, str) or not lead_id.strip():
+            raise CampaignEventError("lead_id must be a non-empty string")
+        if not isinstance(control, str) or not control.strip():
+            raise CampaignEventError("control must be a non-empty string")
+        techniques = self._string_field(payload["standard_techniques"], "standard_techniques")
+        if not techniques:
+            raise CampaignEventError("standard_techniques must list attempted techniques")
+        environment = self._string_field(payload["environment_facts"], "environment_facts")
+        safety = self._string_field(payload["safety_requirements"], "safety_requirements")
+        authorized = self._string_field(payload["authorized_profiles"], "authorized_profiles")
+        unknown = [name for name in authorized if name not in self.BYPASS_PROFILES]
+        if unknown:
+            raise CampaignEventError(f"unknown bypass profiles: {', '.join(sorted(unknown))}")
+        for field in ("positive_control", "negative_control"):
+            if not isinstance(payload[field], str) or not payload[field].strip():
+                raise CampaignEventError(f"{field} must be a non-empty string")
+
+        state = self.store.snapshot()
+        original = next((lead for lead in state["leads"] if lead["id"] == lead_id), None)
+        if original is None:
+            raise CampaignEventError(f"unknown original lead: {lead_id}")
+
+        config = load_engagement(engagement_yaml(self.engagement))
+        allowed, _asset, reason = scope_decision(config, original["subject"])
+        if not allowed:
+            return {
+                "accepted": False,
+                "operator_gate": True,
+                "reason": reason,
+                "control": control,
+                "applicable_profiles": [],
+                "scheduled": [],
+                "rejected": [],
+            }
+
+        applicable = self._applicable_profile(control)
+        applicable_profiles = [applicable] if applicable is not None else []
+        scheduled: list[dict[str, str]] = []
+        rejected: list[dict[str, str]] = []
+        for profile in applicable_profiles:
+            if profile not in authorized:
+                rejected.append({"profile": profile, "reason": "unauthorized"})
+                continue
+            raw = {
+                "family": f"bypass-{profile}",
+                "kind": "bypass",
+                "subject": original["subject"],
+                "method": original["method"],
+                "parameter": original["parameter"],
+                "priority": max(int(original["priority"]), 60),
+                "provenance": [
+                    "coordinator:bypass",
+                    f"profile:{profile}",
+                    f"control:{control.strip().casefold()}",
+                ],
+                "evidence": [
+                    f"control:{control.strip()}",
+                    *[f"standard:{item}" for item in techniques],
+                    f"positive-control:{payload['positive_control'].strip()}",
+                    f"negative-control:{payload['negative_control'].strip()}",
+                    *[f"environment:{item}" for item in environment],
+                ],
+                "hypothesis": (
+                    f"Attempt {profile} bypass of the {control.strip()} control "
+                    f"for {original['subject']}."
+                ),
+                "parent_leads": [original["id"]],
+                "safety_requirements": safety,
+            }
+            created = self.store.ensure_lead(raw)["lead"]
+            scheduled.append({"profile": profile, "lead_id": created["id"]})
+
+        if applicable is None:
+            reason = "no bypass profile applies to the observed control"
+        elif scheduled:
+            reason = "specialist bypass work scheduled"
+        else:
+            reason = "the applicable profile is not authorized"
+        return {
+            "accepted": bool(scheduled),
+            "operator_gate": bool(applicable_profiles) and not scheduled,
+            "reason": reason,
+            "control": control,
+            "applicable_profiles": applicable_profiles,
+            "scheduled": scheduled,
+            "rejected": rejected,
+        }
+
+    @staticmethod
+    def _string_field(value: Any, field: str) -> list[str]:
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            raise CampaignEventError(f"{field} must be an array of non-empty strings")
+        return list(dict.fromkeys(item.strip() for item in value))
+
     def _apply(self, event: Any) -> dict[str, Any]:
         if not isinstance(event, dict) or set(event) != {
             "schema_version",
@@ -306,6 +440,12 @@ class CampaignCoordinator:
                 "schema_version": 1,
                 "type": event["type"],
                 "result": self._apply_surface(payload),
+            }
+        if event["type"] == "hypothesis.resisted":
+            return {
+                "schema_version": 1,
+                "type": event["type"],
+                "result": self._apply_resisted(payload),
             }
         if event["type"] != "lead.upsert":
             raise CampaignEventError(f"unsupported event type: {event['type']}")

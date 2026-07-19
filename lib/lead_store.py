@@ -405,6 +405,24 @@ class LeadState:
 
         return sorted(candidates, key=scheduling_key)[0]
 
+    @staticmethod
+    def _pending_bypass(state: dict[str, Any], lead_id: str) -> list[dict[str, Any]]:
+        """Return non-terminal bypass leads that escalated the given hypothesis."""
+        return [
+            child
+            for child in state["leads"]
+            if child["kind"] == "bypass"
+            and lead_id in child["parent_leads"]
+            and child["status"] in {"queued", "leased"}
+        ]
+
+    @staticmethod
+    def _has_bypass_children(state: dict[str, Any], lead_id: str) -> bool:
+        return any(
+            child["kind"] == "bypass" and lead_id in child["parent_leads"]
+            for child in state["leads"]
+        )
+
     def close_queued(self, lead_id: str, outcome: str) -> dict[str, Any]:
         """Close scheduler work whose coverage became terminal before leasing."""
         if outcome not in {"completed", "exhausted", "blocked"}:
@@ -457,7 +475,12 @@ class LeadState:
                 continue
             lead.pop("lease_owner", None)
             lead.pop("lease_until", None)
-            lead["status"] = "exhausted" if lead["attempts"] >= max_attempts else "queued"
+            reached_cap = lead["attempts"] >= max_attempts
+            if reached_cap and self._pending_bypass(state, lead["id"]):
+                # A hypothesis cannot exhaust while its specialist work remains.
+                lead["status"] = "queued"
+            else:
+                lead["status"] = "exhausted" if reached_cap else "queued"
             lead["updated_at"] = current.isoformat().replace("+00:00", "Z")
 
     def _lease(
@@ -548,8 +571,18 @@ class LeadState:
                 raise LeadStateError(f"unknown lead id: {lead_id}")
             if lead.get("status") != "leased" or lead.get("lease_owner") != owner:
                 raise LeadStateError("lead must be held by the lease owner")
+            final_evidence = merged_evidence
+            if outcome == "exhausted":
+                if self._pending_bypass(state, lead_id):
+                    raise LeadStateError(
+                        "hypothesis cannot be exhausted while specialist bypass work remains"
+                    )
+                if self._has_bypass_children(state, lead_id):
+                    final_evidence = _ordered_union(
+                        merged_evidence, ["not bypassed under the tested matrix"]
+                    )
             lead["status"] = outcome
-            lead["evidence"] = _ordered_union(lead["evidence"], merged_evidence)
+            lead["evidence"] = _ordered_union(lead["evidence"], final_evidence)
             lead.pop("lease_owner", None)
             lead.pop("lease_until", None)
             lead["updated_at"] = timestamp
