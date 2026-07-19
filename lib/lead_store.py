@@ -378,7 +378,49 @@ class LeadState:
         ]
         if not candidates:
             return None
-        return sorted(candidates, key=lambda lead: (-lead["priority"], lead["id"]))[0]
+        terminal_baseline: dict[str, int] = {}
+        for lead in state["leads"]:
+            if (
+                lead["kind"] == "discovery"
+                and "coordinator:required-coverage" in lead["provenance"]
+                and lead["status"] in {"completed", "exhausted", "blocked"}
+            ):
+                terminal_baseline[lead["subject"]] = (
+                    terminal_baseline.get(lead["subject"], 0) + 1
+                )
+
+        def scheduling_key(lead: dict[str, Any]) -> tuple[int, int, int, str]:
+            baseline = (
+                lead["kind"] == "discovery"
+                and "coordinator:required-coverage" in lead["provenance"]
+            )
+            if baseline:
+                lane = 0
+            elif lead["kind"] == "discovery":
+                lane = 1
+            else:
+                lane = 2
+            served = terminal_baseline.get(lead["subject"], 0) if baseline else 0
+            return lane, served, -lead["priority"], lead["id"]
+
+        return sorted(candidates, key=scheduling_key)[0]
+
+    def close_queued(self, lead_id: str, outcome: str) -> dict[str, Any]:
+        """Close scheduler work whose coverage became terminal before leasing."""
+        if outcome not in {"completed", "exhausted", "blocked"}:
+            raise LeadStateError("outcome must be completed, exhausted, or blocked")
+        timestamp = self._now()
+
+        def operation(state: dict[str, Any]) -> dict[str, Any]:
+            lead = next((item for item in state["leads"] if item["id"] == lead_id), None)
+            if lead is None:
+                raise LeadStateError(f"unknown lead id: {lead_id}")
+            if lead["status"] == "queued":
+                lead["status"] = outcome
+                lead["updated_at"] = timestamp
+            return lead
+
+        return self._mutate(operation)
 
     def inspect(self) -> dict[str, Any]:
         """Initialize if needed, then return one consistent read-only campaign view."""

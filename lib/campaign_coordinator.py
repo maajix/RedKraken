@@ -174,11 +174,19 @@ class CampaignCoordinator:
                     reason="required discovery pending",
                 )["coverage"]
                 coverage_by_key[key] = entry
-            if entry["status"] != "not-tested":
-                continue
             raw = self._discovery_lead(asset, method, role)
             lead_id = self.store.lead_id(raw)
             existing = leads_by_id.get(lead_id)
+            if entry["status"] != "not-tested":
+                if existing is not None and existing["status"] == "queued":
+                    outcome = {
+                        "tested": "completed",
+                        "not-applicable": "completed",
+                        "exhausted": "exhausted",
+                        "blocked": "blocked",
+                    }[entry["status"]]
+                    leads_by_id[lead_id] = self.store.close_queued(lead_id, outcome)
+                continue
             if existing is None or existing["status"] not in {"queued", "leased"}:
                 ensured = self.store.ensure_lead(raw)["lead"]
                 leads_by_id[lead_id] = ensured
