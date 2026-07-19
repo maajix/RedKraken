@@ -7,9 +7,23 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
+REQUIREMENTS = ROOT / "requirements.txt"
+PYTEST_CONFIG = ROOT / "pytest.ini"
 
 
 class CiWorkflowTest(unittest.TestCase):
+    def test_python_dependencies_are_declared_and_installed_in_ci(self) -> None:
+        requirements = REQUIREMENTS.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("PyYAML==6.0.3", requirements)
+        self.assertIn("python3 -m pip install -r requirements.txt", workflow)
+
+    def test_pytest_console_entrypoint_can_import_repository_modules(self) -> None:
+        config = PYTEST_CONFIG.read_text(encoding="utf-8")
+
+        self.assertIn("pythonpath = .", config)
+
     def test_coverage_jobs_do_not_call_removed_script(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
 

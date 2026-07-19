@@ -15,8 +15,8 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install PyYAML
-        run: python3 -m pip install PyYAML==6.0.3
+      - name: Install Python dependencies
+        run: python3 -m pip install -r requirements.txt
 
       - name: Scope check self-test
         run: bash tests/test_scope_check.sh
