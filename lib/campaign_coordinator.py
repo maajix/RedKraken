@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from chain_store import ChainState, ChainStateError
 from harness_config import engagement_yaml, load_engagement, scope_decision
 from lead_store import LeadState
 from surface_store import SurfaceState
@@ -74,6 +75,7 @@ class CampaignCoordinator:
         self.engagement = Path(engagement)
         self.store = LeadState(self.engagement)
         self.surface = SurfaceState(self.engagement)
+        self.chain = ChainState(self.engagement)
 
     @staticmethod
     def _completion(
@@ -436,26 +438,60 @@ class CampaignCoordinator:
             raise CampaignEventError("event schema_version must be 1")
         payload = event["payload"]
         if event["type"] == "surface.observed":
-            return {
-                "schema_version": 1,
-                "type": event["type"],
-                "result": self._apply_surface(payload),
-            }
+            result = self._apply_surface(payload)
+            if result["result"] in {"appended", "changed"}:
+                self.chain.mark_material()
+            return {"schema_version": 1, "type": event["type"], "result": result}
         if event["type"] == "hypothesis.resisted":
+            result = self._apply_resisted(payload)
+            if result["scheduled"]:
+                self.chain.mark_material()
+            return {"schema_version": 1, "type": event["type"], "result": result}
+        if event["type"] in {"chain.observe", "chain.certify", "chain.validate"}:
             return {
                 "schema_version": 1,
                 "type": event["type"],
-                "result": self._apply_resisted(payload),
+                "result": self._apply_chain(event["type"], payload),
             }
         if event["type"] != "lead.upsert":
             raise CampaignEventError(f"unsupported event type: {event['type']}")
         if not isinstance(payload, dict) or set(payload) != {"lead"}:
             raise CampaignEventError("lead.upsert payload must contain only lead")
-        return {
-            "schema_version": 1,
-            "type": event["type"],
-            "result": self.store.upsert_lead(payload["lead"]),
-        }
+        result = self.store.upsert_lead(payload["lead"])
+        self.chain.mark_material()  # A lead revision reopens chain review.
+        return {"schema_version": 1, "type": event["type"], "result": result}
+
+    def _apply_chain(self, kind: str, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise CampaignEventError("chain payload must be an object")
+        try:
+            if kind == "chain.observe":
+                if set(payload) != {"node"}:
+                    raise CampaignEventError("chain.observe payload must contain only node")
+                node = payload["node"]
+                if not isinstance(node, dict) or not isinstance(node.get("asset"), str):
+                    raise CampaignEventError("chain node asset must be a string")
+                config = load_engagement(engagement_yaml(self.engagement))
+                allowed, _asset, reason = scope_decision(config, node["asset"])
+                if not allowed:
+                    return {"accepted": False, "operator_gate": True, "reason": reason}
+                observed = self.chain.observe(node)
+                return {"accepted": True, "operator_gate": False, **observed}
+            if kind == "chain.certify":
+                if payload:
+                    raise CampaignEventError("chain.certify payload must be empty")
+                return {"accepted": True, **self.chain.certify()}
+            if set(payload) - {"assignment_id", "severity", "evidence", "title"}:
+                raise CampaignEventError("chain.validate payload fields are invalid")
+            finding = self.chain.validate(
+                payload.get("assignment_id", ""),
+                payload.get("severity", "info"),
+                payload.get("evidence", []),
+                payload.get("title", ""),
+            )
+            return {"accepted": True, "finding": finding}
+        except ChainStateError as exc:
+            raise CampaignEventError(str(exc)) from exc
 
     def respond(self, event: Any = None) -> dict[str, Any]:
         event_result = self._apply(event) if event is not None else None
@@ -474,4 +510,5 @@ class CampaignCoordinator:
             "next_work": next_work,
             "completion": completion,
             "surface": self.surface.snapshot(),
+            "chain": self.chain.snapshot(),
         }
