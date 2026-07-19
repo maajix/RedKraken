@@ -30,7 +30,7 @@ library.
 - [Why RedKraken](#why-redkraken)
 - [Quick start](#quick-start)
 - [Enforcement model](#enforcement-model)
-- [Browser and API workflows](#browser-and-api-workflows)
+- [Automated browser and API workflows](#automated-browser-and-api-workflows)
 - [State and evidence](#state-and-evidence)
 - [Knowledge base](#knowledge-base)
 - [Open-source toolchain](#open-source-toolchain)
@@ -60,8 +60,8 @@ library.
 
 ## Quick start
 
-This is built to run inside Claude Code, so the fastest way in is to just say
-what you want in plain English and let it handle the setup.
+RedKraken runs inside Claude Code. Start Claude in the repository and describe
+the authorized engagement in plain English:
 
 ```bash
 git clone https://github.com/maajix/RedKraken.git
@@ -74,33 +74,13 @@ Then, in the chat:
 > Set up a new engagement called `acme` for `https://app.acme.com`, in scope
 > `*.acme.com`, then run a full pentest.
 
-Claude creates `engagements/acme/engagement.yaml` from the template, confirms
-scope and intent with you, runs `bash lib/preflight.sh`, and drives `/pentest
-engagements/acme` end to end. The same works for narrower asks — "just run
-recon", "audit the source in `./app` instead", "regenerate the report".
+Claude creates the engagement, confirms scope and intent, checks the toolchain,
+and runs the full recon → hunt → exploit → report loop. Ask for only recon, a
+whitebox source audit, or report regeneration when you want an individual phase;
+the `/recon`, `/audit`, `/pentest`, and `/report` commands remain available.
 
-Everything Claude runs is ordinary shell underneath, so the manual path still
-works if you want it (scripting, CI, or just poking around):
-
-```bash
-bash lib/preflight.sh                  # report installed/missing/broken tools
-bash lib/preflight.sh --install        # optional, explicit
-
-mkdir -p engagements/acme
-cp scope/engagement.example.yaml engagements/acme/engagement.yaml
-$EDITOR engagements/acme/engagement.yaml
-
-# In Claude Code:
-/pentest engagements/acme
-# Or narrower workflows:
-/recon engagements/acme
-/audit engagements/acme
-/report engagements/acme
-```
-
-`run_context.py` fingerprints the engagement, source tree/ref, and relevant tool
-paths. A changed fingerprint produces `STALE_RUN_CONTEXT`; archive the prior
-`state/` before starting a logically new run.
+Runs are bound to the engagement, source tree, and toolchain. If any of those
+change, RedKraken stops instead of mixing results from different runs.
 
 ## Enforcement model
 
@@ -113,75 +93,23 @@ paths. A changed fingerprint produces `STALE_RUN_CONTEXT`; archive the prior
 4. Agent skills enforce intent, destructive-action approval, untrusted-content
    isolation, evidence requirements, and explicit tool-gap reporting.
 
-The hook is heuristic; the proxy is the stronger HTTP enforcement boundary. For
-non-HTTP tools or strong client isolation, add an OS/network egress policy that can
-reach only authorized targets.
+The hook is heuristic; the proxy is the stronger HTTP enforcement boundary.
+RedKraken starts and configures that proxy for supported HTTP tools. For non-HTTP
+tools or stronger isolation, use an OS/network egress policy that can reach only
+authorized targets. Optional rate limits are configured per engagement and may
+be tightened per tool.
 
-### Scope proxy
+## Automated browser and API workflows
 
-```bash
-# Third argument selects an optional per-tool rate policy.
-bash scripts/start_scope_proxy.sh engagements/acme 18080 playwright
+RedKraken handles the wrappers and proxy configuration itself. Authenticated
+browser work runs in isolated Playwright contexts and records traces, HAR files,
+screenshots, redacted metadata, and artifact hashes. API exploration uses bounded,
+deterministic Schemathesis runs by default, with RESTler, grpcurl, and OWASP ZAP
+available when the target and rules of engagement call for them.
 
-# In a separate process:
-bash scripts/browser_capture.sh engagements/acme https://app.example.com owner \
-  --proxy http://127.0.0.1:18080
-```
-
-mitmproxy uses its generated CA for HTTPS interception. Install/trust that CA only
-inside the isolated test browser/container. Do not weaken host TLS outside the
-engagement; `--ignore-https-errors` is an explicit browser-capture exception.
-
-### Opt-in rate limiting
-
-Rate limiting is disabled unless the operator sets:
-
-```yaml
-rate_limit_enabled: true
-rate_limit:
-  requests_per_second: 10
-  burst: 10
-  max_concurrency: 4
-  per_tool:
-    schemathesis:
-      requests_per_second: 2
-      burst: 2
-      max_concurrency: 1
-```
-
-The scope proxy uses a token bucket and concurrency bound. Start it with the tool
-name to select an override; per-tool values may tighten but never raise the global
-limits. Compatible wrappers also pass tool-native rate flags.
-Absent/false `rate_limit_enabled` means no throttling, including for legacy scalar
-`rate_limit` values.
-
-## Browser and API workflows
-
-Authenticated SPA capture uses isolated Playwright contexts and writes a trace,
-HAR, screenshot, storage state, redacted event metadata, and artifact hashes under
-`evidence/browser/`:
-
-```bash
-bash scripts/start_scope_proxy.sh engagements/acme 18080 playwright
-bash scripts/browser_capture.sh engagements/acme https://app.example.com peer \
-  --proxy http://127.0.0.1:18080 \
-  --storage-state engagements/acme/evidence/browser/peer-state.json
-```
-
-Bounded Schemathesis runs are read-only by default and use deterministic seeds:
-
-```bash
-bash scripts/start_scope_proxy.sh engagements/acme 18080 schemathesis
-PENTEST_PROXY=http://127.0.0.1:18080 \
-  bash scripts/run_schemathesis.sh engagements/acme ./openapi.yaml \
-  https://api.example.com
-```
-
-`--allow-mutation` additionally requires `mutation_allowed: true`. Sensitive-data
-access, discovered-credential use, pivoting, and availability effects remain
-independently gated. RESTler is
-reserved for explicitly approved deeper producer-consumer exploration; grpcurl is
-the gRPC client. OWASP ZAP is an optional Automation Framework/import proxy.
+Mutation, sensitive-data access, discovered credentials, pivoting, and
+availability effects are separate approval gates; enabling one does not enable
+the others.
 
 ## State and evidence
 
@@ -194,48 +122,23 @@ the gRPC client. OWASP ZAP is an optional Automation Framework/import proxy.
 - `evidence/<finding>/`: request/response, trace, screenshot, and cleanup proof.
 - `report.md`: deterministic rendering with evidence path checks and hashes.
 
-Run `python3 lib/secure_engagement.py engagements/acme` after external tools or
-before handoff. It normalizes engagement directories to `0700` and files to
-`0600` without following symbolic links; the run-context and report renderer also
-invoke it automatically.
-
-Verify audit integrity with `python3 scripts/verify_audit.py
-engagements/acme/audit.jsonl`. Legacy prefixes are reported as unchained; every
-new chained suffix must verify before handoff.
+Run-context and report generation normalize engagement directories to `0700` and
+files to `0600`. Audit entries are hash-chained so their integrity can be checked
+before handoff.
 
 ### Retention and hygiene
 
-Run `python3 scripts/audit_engagement_hygiene.py --json engagements/acme` before
-archive or cleanup. It is report-only and emits paths, modes, classifications,
-reference counts, and hashes—not secret values. Targets, cloud/public/private
-IPs, hostnames, CIDRs, ports, audit logs, findings, and referenced evidence are
-preserved by default. Rotate/revoke active credentials before plaintext removal;
-never delete through broad globs or rewrite chained originals. Normalize retained
-permissions with `python3 lib/secure_engagement.py engagements/acme`.
-
-Use `lib/record_finding.sh` rather than appending JSON by hand. Confirmed findings
-require evidence; exploited findings require concrete impact.
+Ask Claude for a hygiene audit before archive or cleanup. It checks paths,
+permissions, classifications, references, and hashes without printing secret
+values. Evidence and chained audit records are preserved by default. Active
+credentials must be rotated or revoked before plaintext removal.
 
 ## Knowledge base
 
-- `playbooks/<topic>/README.md`: 48 source-reviewed topic entrypoints for OAuth
-  BCP, WebAuthn,
-  cookie and identity-parser differentials, stateful APIs, framework-generated
-  routes, webhook authenticity, partial failures, ORM leaks, race conditions,
-  GraphQL, gRPC, cross-version HTTP desync, URL/SSRF routing, cache
-  normalization, browser messaging/DOM clobbering, client-side path traversal,
-  WebSocket/WebTransport/XS-Leaks, error-oracle SSTI, agentic AI/MCP, secrets and
-  cryptographic lifecycle, software supply-chain integrity, deployment/IaC
-  exposure, API inventory/resource/upstream trust, security telemetry, general
-  MFA/recovery/session lifecycle, NoSQL operator injection, browser policy and
-  framing, spreadsheet formula injection, information disclosure, safe modern
-  deserialization, and CMS extension/content/update boundaries. The machine-
-  readable `playbooks/_meta/coverage-baselines.json` maps every OWASP Top 10:2025, API Security
-  Top 10:2023, and WSTG v4.2 domain to reviewed cards.
-  Reviewed supplements also cover browser storage/offline/client-template state,
-  SCIM/JIT/invitation/role/deprovisioning lifecycles, and structured or delayed
-  XML/XSLT/expression/format/SSI injection boundaries, browser script execution,
-  relational queries, server file resolution, and upload processing.
+- `playbooks/<topic>/README.md`: 48 source-reviewed entry points spanning
+  identity, APIs, injection, browser security, protocols, supply chain,
+  deployment, agentic AI, and other modern web attack surfaces. Coverage metadata
+  maps them to OWASP Top 10:2025, API Security Top 10:2023, and WSTG v4.2.
 - Topic directories also contain 69 imported technique notes with provenance
   hashes and `imported-unreviewed` trust labels.
 - `playbooks/code-review/`: source/sink packs for C#, Go, Java, JavaScript,
