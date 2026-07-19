@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from chain_store import ChainState, ChainStateError
+from challenge_store import LENSES as CHALLENGE_LENSES, ChallengeState, ChallengeStateError
 from harness_config import engagement_yaml, load_engagement, scope_decision
 from lead_store import LeadState
 from surface_store import SurfaceState
@@ -70,12 +73,28 @@ class CampaignCoordinator:
         "role": ("authenticated-crawl", "authorization-matrix"),
         "trust-relationship": ("trust-mapping",),
     }
+    PROHIBITED_IDEAS = (
+        "denial-of-service",
+        "denial of service",
+        "ddos",
+        "dos attack",
+        "resource exhaustion",
+        "destroy",
+        "destructive",
+        "ransom",
+        "wipe production",
+        "exfiltrate",
+        "drop table",
+        "delete all",
+        "brick the",
+    )
 
     def __init__(self, engagement: Path | str):
         self.engagement = Path(engagement)
         self.store = LeadState(self.engagement)
         self.surface = SurfaceState(self.engagement)
         self.chain = ChainState(self.engagement)
+        self.challenge = ChallengeState(self.engagement)
 
     @staticmethod
     def _completion(
@@ -453,6 +472,12 @@ class CampaignCoordinator:
                 "type": event["type"],
                 "result": self._apply_chain(event["type"], payload),
             }
+        if event["type"] in {"challenge.open", "challenge.submit"}:
+            return {
+                "schema_version": 1,
+                "type": event["type"],
+                "result": self._apply_challenge(event["type"], payload),
+            }
         if event["type"] != "lead.upsert":
             raise CampaignEventError(f"unsupported event type: {event['type']}")
         if not isinstance(payload, dict) or set(payload) != {"lead"}:
@@ -493,6 +518,224 @@ class CampaignCoordinator:
         except ChainStateError as exc:
             raise CampaignEventError(str(exc)) from exc
 
+    @staticmethod
+    def _material_view(
+        state: dict[str, Any], surface: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The read-only campaign digest every explorer lens reasons over."""
+        return {
+            "leads": sorted(
+                (
+                    {
+                        "id": lead["id"],
+                        "family": lead["family"],
+                        "kind": lead["kind"],
+                        "subject": lead["subject"],
+                        "method": lead["method"],
+                        "parameter": lead["parameter"],
+                        "status": lead["status"],
+                        "priority": lead["priority"],
+                    }
+                    for lead in state["leads"]
+                ),
+                key=lambda entry: entry["id"],
+            ),
+            "coverage": sorted(
+                ({"key": entry["key"], "status": entry["status"]} for entry in state["coverage"]),
+                key=lambda entry: entry["key"],
+            ),
+            "surface": sorted(
+                (
+                    {"id": item["id"], "kind": item["kind"], "value": item["value"]}
+                    for item in surface["observations"]
+                ),
+                key=lambda entry: entry["id"],
+            ),
+        }
+
+    @staticmethod
+    def _digest(view: dict[str, Any]) -> str:
+        return hashlib.sha256(
+            json.dumps(view, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    def _material_digest(self, state: dict[str, Any], surface: dict[str, Any]) -> str:
+        return self._digest(self._material_view(state, surface))
+
+    def _apply_challenge(self, kind: str, payload: Any) -> dict[str, Any]:
+        try:
+            if kind == "challenge.open":
+                return self._open_challenge(payload)
+            return self._submit_challenge(payload)
+        except ChallengeStateError as exc:
+            raise CampaignEventError(str(exc)) from exc
+
+    def _open_challenge(self, payload: Any) -> dict[str, Any]:
+        if payload not in (None, {}):
+            raise CampaignEventError("challenge.open payload must be empty")
+        # Bind the round to the same digest respond() reports, after seeding.
+        self._seed_required_coverage()
+        inspection = self.store.inspect()
+        completion = self._completion(inspection["can_stop"], inspection["state"])
+        view = self._material_view(inspection["state"], self.surface.snapshot())
+        digest = self._digest(view)
+        opened = self.challenge.open(digest)
+        return {
+            "accepted": True,
+            "converged": completion["outcome"] == "converged",
+            "digest": digest,
+            "lenses": list(CHALLENGE_LENSES),
+            "status": opened["status"],
+            "material": view,
+        }
+
+    def _submit_challenge(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict) or set(payload) != {"lens", "leads"}:
+            raise CampaignEventError("challenge.submit payload must contain lens and leads")
+        lens = payload["lens"]
+        leads = payload["leads"]
+        if lens not in CHALLENGE_LENSES:
+            raise CampaignEventError(f"lens must be one of: {', '.join(CHALLENGE_LENSES)}")
+        if not isinstance(leads, list):
+            raise CampaignEventError("leads must be an array of explorer leads")
+        opened = self.challenge.snapshot()
+        if opened["status"] != "open":
+            raise CampaignEventError("no open convergence challenge to answer")
+        digest = opened["digest"]
+        context = self._gate_context()
+        accepted: list[dict[str, str]] = []
+        rejected: list[dict[str, str]] = []
+        for raw in leads:
+            verdict, detail = self._gate_explorer(raw, lens, context)
+            if verdict == "accept":
+                created = self.store.ensure_lead(detail)["lead"]
+                context["leads_by_id"][created["id"]] = created["status"]
+                context["accepted_ids"].add(created["id"])
+                context["support_tokens"].add(created["id"])
+                accepted.append({"subject": detail["subject"], "lead_id": created["id"]})
+            else:
+                rejected.append(detail)
+        if accepted:
+            # An accepted unique lead is material campaign work; it reopens review.
+            self.chain.mark_material()
+        recorded = self.challenge.record(
+            lens, digest, [item["lead_id"] for item in accepted], rejected
+        )
+        return {
+            "accepted": accepted,
+            "rejected": rejected,
+            "reopened": bool(accepted),
+            "status": recorded["status"],
+            "digest": digest,
+        }
+
+    def _gate_context(self) -> dict[str, Any]:
+        config = load_engagement(engagement_yaml(self.engagement))
+        state = self.store.snapshot()
+        leads_by_id = {lead["id"]: lead["status"] for lead in state["leads"]}
+        support = set(leads_by_id)
+        support.update(entry["key"] for entry in state["coverage"])
+        support.update(item["id"] for item in self.surface.snapshot()["observations"])
+        return {
+            "config": config,
+            "leads_by_id": leads_by_id,
+            "support_tokens": support,
+            "accepted_ids": set(),
+        }
+
+    def _gate_explorer(
+        self, raw: Any, lens: str, context: dict[str, Any]
+    ) -> tuple[str, dict[str, str]]:
+        """Quality-gate one explorer lead; reasons never count as progress."""
+        allowed_keys = {
+            "subject",
+            "hypothesis",
+            "observation",
+            "next_test",
+            "provenance",
+            "priority",
+            "safety_requirements",
+            "family",
+            "kind",
+            "method",
+            "parameter",
+        }
+        subject = raw.get("subject") if isinstance(raw, dict) else None
+        label = subject.strip() if isinstance(subject, str) else ""
+
+        def reject(reason: str) -> tuple[str, dict[str, str]]:
+            return "reject", {"subject": label, "reason": reason}
+
+        if not isinstance(raw, dict) or set(raw) - allowed_keys:
+            return reject("incomplete")
+        for field in ("subject", "hypothesis", "observation", "next_test", "family", "kind"):
+            if not isinstance(raw.get(field), str) or not raw[field].strip():
+                return reject("incomplete")
+        provenance = raw.get("provenance")
+        if (
+            not isinstance(provenance, list)
+            or not provenance
+            or not all(isinstance(item, str) and item.strip() for item in provenance)
+        ):
+            return reject("incomplete")
+        priority = raw.get("priority")
+        if isinstance(priority, bool) or not isinstance(priority, int) or not 0 <= priority <= 100:
+            return reject("incomplete")
+        safety = raw.get("safety_requirements")
+        if (
+            not isinstance(safety, list)
+            or not safety
+            or not all(isinstance(item, str) and item.strip() for item in safety)
+        ):
+            return reject("incomplete")
+        method = raw.get("method", "GET")
+        parameter = raw.get("parameter", "")
+        if not isinstance(method, str) or not isinstance(parameter, str):
+            return reject("incomplete")
+
+        haystack = " ".join(
+            (raw["subject"], raw["hypothesis"], raw["next_test"], raw["family"], raw["kind"])
+        ).casefold()
+        if any(token in haystack for token in self.PROHIBITED_IDEAS):
+            return reject("prohibited")
+
+        allowed, _asset, _reason = scope_decision(context["config"], raw["subject"].strip())
+        if not allowed:
+            return reject("out-of-scope")
+
+        tokens = {item.strip() for item in provenance}
+        if tokens.isdisjoint(context["support_tokens"]):
+            return reject("unsupported")
+
+        identity = {
+            "family": raw["family"],
+            "kind": raw["kind"],
+            "subject": raw["subject"],
+            "method": method,
+            "parameter": parameter,
+        }
+        lead_id = LeadState.lead_id(identity)
+        if lead_id in context["accepted_ids"]:
+            return reject("duplicate")
+        existing = context["leads_by_id"].get(lead_id)
+        if existing in {"queued", "leased"}:
+            return reject("duplicate")
+        if existing in {"completed", "exhausted", "blocked"}:
+            return reject("already-tested")
+
+        lead_raw = {
+            **identity,
+            "priority": priority,
+            "provenance": [*(item.strip() for item in provenance), f"challenge:{lens}"],
+            "evidence": [
+                f"observation:{raw['observation'].strip()}",
+                f"next-test:{raw['next_test'].strip()}",
+            ],
+            "hypothesis": raw["hypothesis"].strip(),
+            "safety_requirements": [item.strip() for item in safety],
+        }
+        return "accept", lead_raw
+
     def respond(self, event: Any = None) -> dict[str, Any]:
         event_result = self._apply(event) if event is not None else None
         self._seed_required_coverage()
@@ -503,12 +746,25 @@ class CampaignCoordinator:
             if completion["outcome"] == "incomplete"
             else None
         )
+        surface_snapshot = self.surface.snapshot()
+        chain_snapshot = self.chain.snapshot()
+        challenge_snapshot = self.challenge.snapshot()
+        material_digest = self._material_digest(inspection["state"], surface_snapshot)
+        reporting_permitted = (
+            completion["outcome"] == "converged"
+            and not chain_snapshot["review_pending"]
+            and challenge_snapshot["status"] == "certified"
+            and challenge_snapshot["digest"] == material_digest
+        )
         return {
             "schema_version": 1,
             "event": event_result,
             "state": inspection["state"],
             "next_work": next_work,
             "completion": completion,
-            "surface": self.surface.snapshot(),
-            "chain": self.chain.snapshot(),
+            "surface": surface_snapshot,
+            "chain": chain_snapshot,
+            "challenge": challenge_snapshot,
+            "material_digest": material_digest,
+            "reporting_permitted": reporting_permitted,
         }
