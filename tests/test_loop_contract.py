@@ -13,21 +13,19 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FAMILY_ROOT = ROOT / ".claude" / "skills" / "families"
-REGISTRY = FAMILY_ROOT / "registry.json"
+SKILLS_ROOT = ROOT / ".claude" / "skills"
+REGISTRY = SKILLS_ROOT / "families" / "registry.json"
 SCENARIOS = ROOT / "playbooks" / "_meta" / "scenario-baselines.json"
 
 
 class LoopContractTests(unittest.TestCase):
-    def test_family_registry_covers_every_loadable_family(self) -> None:
+    def test_every_registered_family_is_directly_loadable(self) -> None:
         registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
         rows = registry["families"]
-        actual = {
-            path.parent.name
-            for path in FAMILY_ROOT.glob("*/SKILL.md")
-        }
-        self.assertEqual({row["family"] for row in rows}, actual)
-        self.assertEqual(len(rows), len(actual))
+        families = {row["family"] for row in rows}
+        self.assertEqual(len(rows), len(families))
+        for family in families:
+            self.assertTrue((SKILLS_ROOT / family / "SKILL.md").is_file(), family)
 
         required = {
             "family",
@@ -45,7 +43,7 @@ class LoopContractTests(unittest.TestCase):
             self.assertEqual(required - row.keys(), set(), row["family"])
             self.assertTrue(row["triggers"], row["family"])
             self.assertTrue(row["playbooks"], row["family"])
-            self.assertLessEqual(set(row["follow_on_families"]), actual, row["family"])
+            self.assertLessEqual(set(row["follow_on_families"]), families, row["family"])
             for playbook in row["playbooks"]:
                 self.assertTrue((ROOT / playbook).is_file(), playbook)
         routed = {path for row in rows for path in row["playbooks"]}

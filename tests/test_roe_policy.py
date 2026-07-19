@@ -92,7 +92,7 @@ class RoeAuthorizationTests(unittest.TestCase):
         documents = [
             ROOT / "scope" / "engagement.example.yaml",
             ROOT / ".claude" / "agents" / "exploit-agent.md",
-            ROOT / ".claude" / "skills" / "families" / "ssrf-xxe-file" / "SKILL.md",
+            ROOT / ".claude" / "skills" / "ssrf-xxe-file" / "SKILL.md",
         ]
         for document in documents:
             text = document.read_text(encoding="utf-8")

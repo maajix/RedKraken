@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAYBOOKS = ROOT / "playbooks"
-FAMILIES = ROOT / ".claude" / "skills" / "families"
+FAMILY_SKILLS = ROOT / ".claude" / "skills"
 CATALOG = PLAYBOOKS / "_catalog.md"
 BASELINES = PLAYBOOKS / "_meta" / "coverage-baselines.json"
 REQUIRED = {
@@ -64,7 +64,9 @@ def main() -> int:
         for path in PLAYBOOKS.glob("*/README.md")
         if path.parent.name != "code-review"
     )
-    family_dirs = {p.name for p in FAMILIES.iterdir() if (p / "SKILL.md").is_file()}
+    family_dirs = {
+        p.name for p in FAMILY_SKILLS.iterdir() if (p / "SKILL.md").is_file()
+    }
     ids: Counter[str] = Counter()
     reviewed_families: set[str] = set()
 
@@ -130,7 +132,7 @@ def main() -> int:
         encoding="utf-8"
     )
     for family in sorted(reviewed_families):
-        skill_path = FAMILIES / family / "SKILL.md"
+        skill_path = FAMILY_SKILLS / family / "SKILL.md"
         try:
             skill_name = front_matter(skill_path.read_text(encoding="utf-8"), skill_path)["name"]
         except (ValueError, KeyError) as exc:
