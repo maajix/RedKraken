@@ -96,10 +96,9 @@ def atomic_json(path: Path, payload: dict[str, Any]) -> None:
             pass
 
 
-def identity_payload(yaml_path: Path, config: dict[str, Any], mode: str) -> dict[str, Any]:
+def identity_payload(yaml_path: Path, config: dict[str, Any]) -> dict[str, Any]:
     source = source_identity(config, yaml_path)
     stable = {
-        "mode": mode,
         "engagement_yaml": str(yaml_path),
         "config_sha256": config_sha256(yaml_path),
         "source": source,
@@ -108,6 +107,22 @@ def identity_payload(yaml_path: Path, config: dict[str, Any], mode: str) -> dict
     }
     encoded = json.dumps(stable, separators=(",", ":"), sort_keys=True).encode()
     return {**stable, "context_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def legacy_identity_payload(
+    yaml_path: Path, config: dict[str, Any], mode: str
+) -> dict[str, Any]:
+    stable = {"mode": mode, **identity_payload(yaml_path, config)}
+    stable.pop("context_sha256")
+    encoded = json.dumps(stable, separators=(",", ":"), sort_keys=True).encode()
+    return {**stable, "context_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def record_phase(payload: dict[str, Any], phase: str) -> None:
+    history = payload.setdefault("phase_history", [])
+    if payload.get("current_phase") != phase:
+        history.append({"phase": phase, "entered_at": now()})
+    payload["current_phase"] = phase
 
 
 def validate_mode(config: dict[str, Any], mode: str) -> None:
@@ -129,7 +144,7 @@ def main(argv: list[str]) -> int:
         directory = yaml_path.parent
         config = load_engagement(yaml_path)
         validate_mode(config, args.mode)
-        identity = identity_payload(yaml_path, config, args.mode)
+        identity = identity_payload(yaml_path, config)
         state = directory / "state"
         evidence = directory / "evidence"
         directory.chmod(0o700)
@@ -142,10 +157,22 @@ def main(argv: list[str]) -> int:
         if run_path.exists():
             previous = json.loads(run_path.read_text(encoding="utf-8"))
             if previous.get("context_sha256") != identity["context_sha256"]:
-                print("STALE_RUN_CONTEXT: engagement config or source identity changed", file=sys.stderr)
-                print(f"previous={previous.get('context_sha256', '')}", file=sys.stderr)
-                print(f"current={identity['context_sha256']}", file=sys.stderr)
-                return 3
+                legacy_mode = previous.get("mode")
+                legacy = (
+                    legacy_identity_payload(yaml_path, config, legacy_mode)
+                    if previous.get("schema_version") == 1
+                    and isinstance(legacy_mode, str)
+                    else None
+                )
+                if legacy is None or previous.get("context_sha256") != legacy["context_sha256"]:
+                    print("STALE_RUN_CONTEXT: engagement config or source identity changed", file=sys.stderr)
+                    print(f"previous={previous.get('context_sha256', '')}", file=sys.stderr)
+                    print(f"current={identity['context_sha256']}", file=sys.stderr)
+                    return 3
+            previous.update(identity)
+            previous.pop("mode", None)
+            previous["schema_version"] = 2
+            record_phase(previous, args.mode)
             previous["last_verified"] = now()
             previous["tool_paths"] = tool_paths()
             atomic_json(run_path, previous)
@@ -153,12 +180,13 @@ def main(argv: list[str]) -> int:
         else:
             payload = {
                 **identity,
-                "schema_version": 1,
+                "schema_version": 2,
                 "run_id": str(uuid.uuid4()),
                 "started_at": now(),
                 "last_verified": now(),
                 "tool_paths": tool_paths(),
             }
+            record_phase(payload, args.mode)
             atomic_json(run_path, payload)
             result = "NEW_RUN"
         active = ROOT / ".active_engagement"
