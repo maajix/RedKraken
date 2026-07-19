@@ -9,4 +9,4 @@ Generate the report for engagement: **$ARGUMENTS**
 2. Verify the immutable run context: `python3 lib/run_context.py "$ARGUMENTS" --mode report`. A stale context is a hard stop until prior state is archived.
 3. Render deterministically: `python3 scripts/render_report.py "$ARGUMENTS"`.
 4. Optionally dispatch the **`reporter`** read-only to flag unclear wording or missing data, but do not let it rewrite finding facts or evidence hashes.
-5. Report the `report.md` path and a severity-count summary plus any coverage gaps.
+5. Report the `report.md` path, the campaign's terminal outcome (**converged / incomplete / operator-blocked / budget-exhausted**, rendered from the coordinator's authoritative decision), and a severity-count summary plus any remaining coverage gaps.

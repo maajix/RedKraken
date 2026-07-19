@@ -67,10 +67,10 @@ class LoopContractTests(unittest.TestCase):
         skill = (ROOT / ".claude/skills/web-recon/SKILL.md").read_text(encoding="utf-8")
         agent = (ROOT / ".claude/agents/recon-agent.md").read_text(encoding="utf-8")
         combined = "\n".join((command, skill, agent)).casefold()
+        # Recon wiring only; round-budget / no-progress termination is proven through
+        # the coordinator seam (test_campaign_coordinator_cli, test_lead_store).
         for phrase in (
             "surface delta",
-            "no-progress",
-            "round budget",
             "scripts/lead_state.py",
             "coverage ledger",
         ):
@@ -86,11 +86,12 @@ class LoopContractTests(unittest.TestCase):
             .casefold()
             .split()
         )
+        # Lead-state wiring only; convergence/budget semantics are proven through the
+        # coordinator seam, not re-asserted as prose here.
         for phrase in (
             "derived leads",
             "re-triage",
             "coverage ledger",
-            "two no-progress rounds",
             "scripts/lead_state.py",
             "actionable",
             "lead-state.json",
@@ -117,6 +118,21 @@ class LoopContractTests(unittest.TestCase):
         self.assertIn("never claim unrelated queued work", loop)
         self.assertIn("leave derived leads queued", hunter)
         self.assertIn("do not lease a derived lead", hunter)
+
+    def test_docs_name_the_coordinator_as_single_completion_authority(self) -> None:
+        # Completion semantics live in the coordinator seam; the campaign-driving docs
+        # must only name that one authority and the four outcome labels consistently.
+        outcomes = ("converged", "incomplete", "operator-blocked", "budget-exhausted")
+        for relative in (
+            ".claude/skills/web-pentest-loop/SKILL.md",
+            ".claude/skills/web-full-pentest/SKILL.md",
+            ".claude/commands/pentest.md",
+            ".claude/commands/full-pentest.md",
+        ):
+            text = (ROOT / relative).read_text(encoding="utf-8").casefold()
+            self.assertIn("coordinator", text, relative)
+            for label in outcomes:
+                self.assertIn(label, text, f"{relative}:{label}")
 
     def test_scenario_baselines_are_immutable_and_required_by_loop(self) -> None:
         manifest = json.loads(SCENARIOS.read_text(encoding="utf-8"))

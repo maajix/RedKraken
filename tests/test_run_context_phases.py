@@ -87,6 +87,46 @@ class RunContextPhaseTests(unittest.TestCase):
             ["recon", "pentest", "report"],
         )
 
+    def test_legacy_v1_run_context_migrates_without_being_stale(self) -> None:
+        # A pre-phase-model run.json is schema_version 1 with a mode-dependent identity.
+        # A later phase must migrate it to v2 in place, not fail closed as stale.
+        sys.path.insert(0, str(ROOT / "lib"))
+        import run_context  # noqa: PLC0415
+        from harness_config import engagement_yaml, load_engagement  # noqa: PLC0415
+
+        yaml_path = engagement_yaml(str(self.engagement))
+        config = load_engagement(yaml_path)
+        legacy = run_context.legacy_identity_payload(yaml_path, config, "recon")
+        state = self.engagement / "state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "run.json").write_text(
+            json.dumps(
+                {
+                    **legacy,
+                    "schema_version": 1,
+                    "run_id": "legacy-run-id",
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "last_verified": "2026-01-01T00:00:00Z",
+                    "tool_paths": {},
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        self.assertIn("RESUME", self.run_context("pentest").stdout)
+
+        migrated = self.read_run()
+        self.assertEqual(migrated["schema_version"], 2)
+        self.assertNotIn("mode", migrated)
+        self.assertEqual(migrated["run_id"], "legacy-run-id")
+        self.assertEqual(migrated["current_phase"], "pentest")
+        self.assertEqual(
+            migrated["context_sha256"],
+            run_context.identity_payload(yaml_path, config)["context_sha256"],
+        )
+
     def test_scope_change_still_fails_closed_across_phase_transition(self) -> None:
         self.run_context("recon")
         before = self.read_run()
