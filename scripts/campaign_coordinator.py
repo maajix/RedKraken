@@ -20,14 +20,25 @@ def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(description=__doc__)
     command.add_argument("--engagement", required=True)
     command.add_argument("--event")
+    command.add_argument(
+        "--outcome",
+        action="store_true",
+        help="Read-only terminal outcome and report gate; never advances the campaign.",
+    )
     return command
 
 
 def main(argv: list[str]) -> int:
     try:
         args = parser().parse_args(argv[1:])
-        event = json.loads(args.event) if args.event is not None else None
-        response = CampaignCoordinator(args.engagement).respond(event)
+        if args.outcome and args.event is not None:
+            raise ValueError("--outcome is read-only and cannot carry an --event")
+        coordinator = CampaignCoordinator(args.engagement)
+        if args.outcome:
+            response = coordinator.outcome()
+        else:
+            event = json.loads(args.event) if args.event is not None else None
+            response = coordinator.respond(event)
         print(json.dumps(response, sort_keys=True, separators=(",", ":")))
         return 0
     except (

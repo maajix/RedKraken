@@ -736,6 +736,41 @@ class CampaignCoordinator:
         }
         return "accept", lead_raw
 
+    def _reporting_permitted(
+        self,
+        completion: dict[str, Any],
+        chain_snapshot: dict[str, Any],
+        challenge_snapshot: dict[str, Any],
+        material_digest: str,
+    ) -> bool:
+        """The single terminal gate: coverage, work, leases, bypass, chain, and
+        challenge are all terminal for the *current* material digest."""
+        return (
+            completion["outcome"] == "converged"
+            and not chain_snapshot["review_pending"]
+            and challenge_snapshot["status"] == "certified"
+            and challenge_snapshot["digest"] == material_digest
+        )
+
+    def outcome(self) -> dict[str, Any]:
+        """Read-only terminal outcome for the report gate; never seeds or mutates
+        campaign scheduling state, so a report render cannot advance the campaign."""
+        inspection = self.store.inspect()
+        completion = self._completion(inspection["can_stop"], inspection["state"])
+        surface_snapshot = self.surface.snapshot()
+        chain_snapshot = self.chain.snapshot()
+        challenge_snapshot = self.challenge.snapshot()
+        material_digest = self._material_digest(inspection["state"], surface_snapshot)
+        return {
+            "completion": completion,
+            "chain": chain_snapshot,
+            "challenge": challenge_snapshot,
+            "material_digest": material_digest,
+            "reporting_permitted": self._reporting_permitted(
+                completion, chain_snapshot, challenge_snapshot, material_digest
+            ),
+        }
+
     def respond(self, event: Any = None) -> dict[str, Any]:
         event_result = self._apply(event) if event is not None else None
         self._seed_required_coverage()
@@ -750,11 +785,8 @@ class CampaignCoordinator:
         chain_snapshot = self.chain.snapshot()
         challenge_snapshot = self.challenge.snapshot()
         material_digest = self._material_digest(inspection["state"], surface_snapshot)
-        reporting_permitted = (
-            completion["outcome"] == "converged"
-            and not chain_snapshot["review_pending"]
-            and challenge_snapshot["status"] == "certified"
-            and challenge_snapshot["digest"] == material_digest
+        reporting_permitted = self._reporting_permitted(
+            completion, chain_snapshot, challenge_snapshot, material_digest
         )
         return {
             "schema_version": 1,
