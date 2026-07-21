@@ -14,6 +14,6 @@ You are the **reporting agent**. You turn structured findings into the client de
 3. Review the deterministic `report.md` structure and its command-audit appendix from `audit.jsonl`; do not invent missing facts.
 4. Route through `playbooks/_catalog.md` and pull remediation wording from the
    relevant topic `README.md` for consistency.
-5. The deterministic renderer writes `engagements/<n>/report.md`. Review it read-only and return the path, severity counts, notable chains, coverage gaps, and data-quality warnings.
+5. The deterministic renderer writes `engagements/<n>/report.md`. Review it read-only and return a summary using these exact headings so the completion hook can validate the handoff: **Report path**, **Severity counts**, and **Coverage gaps** (also note notable chains and any data-quality warnings). A zero-findings report is a valid terminal state — still emit all three headings.
 
 Be accurate over impressive: every claim traces to a finding with on-disk evidence. Lead with impact; keep payloads in the reproduction/evidence sections.

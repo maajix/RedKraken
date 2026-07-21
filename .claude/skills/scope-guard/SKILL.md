@@ -52,6 +52,20 @@ If the target list or the `intent` is missing, empty, contradictory, or you are 
 - **`time_window`** → if set and now is outside it, stop.
 - Respect `out_of_scope` even for OOB/callback hosts; use `oob_host` from the config for blind callbacks.
 
+## Shared scope proxy liveness
+
+Exactly ONE scope proxy runs per host at `127.0.0.1:18080`. Before relying on it,
+and whenever a run reports it "down":
+
+- **Check liveness with the sandbox DISABLED.** An in-sandbox loopback probe
+  cannot see an out-of-sandbox listener, so it reports a false "down" — which used
+  to trigger a spurious restart that then crashed on `address already in use`.
+- **(Re)start with `bash scripts/start_scope_proxy.sh <engagement-dir>`.** It is
+  idempotent: if a healthy proxy is already listening it no-ops, so a redundant
+  start can no longer kill the running proxy. It refuses to start over a foreign
+  process holding the port instead of fighting it.
+- **Never launch a second proxy, and never kill/replace a live one to "reset" it.**
+
 ## Audit every executed command
 
 Claude Code `PostToolUse`/`PostToolUseFailure` hooks automatically write redacted

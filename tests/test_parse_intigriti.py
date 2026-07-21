@@ -20,7 +20,7 @@ from lib.harness_config import load_engagement, scope_decision
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "parse_intigriti.py"
-FIXTURE = ROOT / "tests" / "fixtures" / "intigriti_heretechnologies.json"
+FIXTURE = ROOT / "tests" / "fixtures" / "intigriti_sample_program.json"
 TEST_USERNAME = "synthetic-researcher"
 
 
@@ -78,40 +78,40 @@ class IntigritiParserTests(unittest.TestCase):
             self.assertIsNone(re.search(pattern, raw, re.IGNORECASE), pattern)
 
     def test_program_reference_accepts_slug_and_detail_url_only(self) -> None:
-        expected = ("heretechnologies", "heretechnologies")
-        self.assertEqual(self.module.parse_program_ref("heretechnologies/heretechnologies"), expected)
+        expected = ("example-corp", "example-corp")
+        self.assertEqual(self.module.parse_program_ref("example-corp/example-corp"), expected)
         self.assertEqual(
             self.module.parse_program_ref(
                 "https://app.intigriti.com/researcher/programs/"
-                "heretechnologies/heretechnologies/detail"
+                "example-corp/example-corp/detail"
             ),
             expected,
         )
         with self.assertRaisesRegex(ValueError, "company/program"):
-            self.module.parse_program_ref("here.com")
+            self.module.parse_program_ref("example.com")
 
     def test_golden_scope_contains_only_paying_web_assets(self) -> None:
         generated = self.generated()
         self.assertEqual(
             generated["targets"],
             [
-                "*.account.api.here.com",
-                "*.account.here.com",
-                "*.mobilitygraph.hereapi.com",
-                "*.router.hereapi.com",
-                "*.scbe.api.here.com",
-                "*.subp-router.hereapi.com",
-                "jaguar.here.com",
-                "landrover.here.com",
-                "*.here.com",
-                "*.hereapi.com",
+                "*.account.api.example.com",
+                "*.account.example.com",
+                "*.graph.example.net",
+                "*.router.example.net",
+                "*.svc.api.example.com",
+                "*.edge-router.example.net",
+                "alpha.example.com",
+                "beta.example.com",
+                "*.example.com",
+                "*.example.net",
             ],
         )
-        self.assertNotIn("955837609", generated["targets"])
-        self.assertNotIn("com.here.app.maps", generated["targets"])
-        self.assertNotIn("Leaked/compromised employee accounts *.here.com", generated["targets"])
-        self.assertIn("955837609", generated["notes"])
-        self.assertIn("com.here.app.maps", generated["notes"])
+        self.assertNotIn("111222333", generated["targets"])
+        self.assertNotIn("com.example.app.maps", generated["targets"])
+        self.assertNotIn("Leaked/compromised employee accounts *.example.com", generated["targets"])
+        self.assertIn("111222333", generated["notes"])
+        self.assertIn("com.example.app.maps", generated["notes"])
         self.assertIn("Leaked/compromised employee accounts", generated["notes"])
 
     def test_tier_floors_are_derived_from_paid_ranges(self) -> None:
@@ -121,10 +121,10 @@ class IntigritiParserTests(unittest.TestCase):
             for tier in generated["tiers"].values()
             for pattern in tier["patterns"]
         }
-        self.assertEqual(containing["*.here.com"], "exceptional")
-        self.assertEqual(containing["*.hereapi.com"], "exceptional")
-        self.assertEqual(containing["*.account.here.com"], "low")
-        self.assertNotIn("account.here.com", containing)
+        self.assertEqual(containing["*.example.com"], "exceptional")
+        self.assertEqual(containing["*.example.net"], "exceptional")
+        self.assertEqual(containing["*.account.example.com"], "low")
+        self.assertNotIn("account.example.com", containing)
 
     def test_rate_header_and_roe_defaults_are_fail_closed(self) -> None:
         generated = self.generated()
@@ -154,11 +154,11 @@ class IntigritiParserTests(unittest.TestCase):
             path = Path(temp_dir) / "engagement.yaml"
             path.write_text(yaml.safe_dump(self.generated(), sort_keys=False), encoding="utf-8")
             loaded = load_engagement(path)
-        self.assertTrue(scope_decision(loaded, "account.here.com")[0])
-        self.assertTrue(scope_decision(loaded, "a.account.here.com")[0])
-        self.assertFalse(scope_decision(loaded, "here.com")[0])
-        self.assertFalse(scope_decision(loaded, "here.com.evil.com")[0])
-        self.assertFalse(scope_decision(loaded, "here.okta.com")[0])
+        self.assertTrue(scope_decision(loaded, "account.example.com")[0])
+        self.assertTrue(scope_decision(loaded, "a.account.example.com")[0])
+        self.assertFalse(scope_decision(loaded, "example.com")[0])
+        self.assertFalse(scope_decision(loaded, "example.com.evil.com")[0])
+        self.assertFalse(scope_decision(loaded, "sso.example.org")[0])
 
     def test_cli_writes_draft_without_activating_or_overwriting(self) -> None:
         active = ROOT / ".active_engagement"
@@ -168,7 +168,7 @@ class IntigritiParserTests(unittest.TestCase):
             command = [
                 sys.executable,
                 str(SCRIPT),
-                "heretechnologies/heretechnologies",
+                "example-corp/example-corp",
                 "--username",
                 TEST_USERNAME,
                 "--from-file",

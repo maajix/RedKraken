@@ -1,0 +1,335 @@
+{
+  "_fixtureMetadata": {
+    "source": "Synthetic Intigriti-shaped program (no real company data)",
+    "sanitized": true,
+    "note": "Fictional 'Example Corp' on RFC 2606 reserved domains (example.com/.net/.org). Retains only parser-relevant public program fields; no researcher activity, user identifiers, real asset identifiers, or platform metadata."
+  },
+  "description": "Example Corp is a fictional location-platform company used only to exercise the Intigriti program parser. Any resemblance to a real program is coincidental.",
+  "status": 3,
+  "companyHandle": "example-corp",
+  "handle": "example-corp",
+  "name": "Example Corp",
+  "assetsCollection": [
+    {
+      "createdAt": 1738848944,
+      "content": {
+        "assetsAndGroups": [
+          {
+            "typeId": 7,
+            "name": "*.account.api.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 7,
+            "name": "*.account.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 7,
+            "name": "*.graph.example.net",
+            "bountyTierId": 3,
+            "description": "Including, but not limited to, following applications:\nhttps://predictor.graph.example.net/\nhttps://profile.graph.example.net/\n"
+          },
+          {
+            "typeId": 7,
+            "name": "*.router.example.net",
+            "bountyTierId": 3,
+            "description": "Including, but not limited to, following applications:\nhttps://matrix.router.example.net/\nhttps://transit.router.example.net/"
+          },
+          {
+            "typeId": 7,
+            "name": "*.svc.api.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 7,
+            "name": "*.edge-router.example.net",
+            "bountyTierId": 3,
+            "description": "Including, but not limited to, following application:\nhttps://vip.edge-router.example.net/\n"
+          },
+          {
+            "typeId": 3,
+            "name": "111222333",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 2,
+            "name": "com.example.app.maps",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 1,
+            "name": "https://alpha.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 1,
+            "name": "https://beta.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 6,
+            "name": "Leaked/compromised employee accounts *.example.com",
+            "bountyTierId": 3,
+            "description": "Any leaked/compromised employee accounts within the domain @example.com for any service in domains *.example.com (excluding unverified accounts on account.example.com) and sso.example.org. If you come across any such accounts, please notify us; valid and non-duplicate reports are accepted with Low/Medium severity."
+          },
+          {
+            "typeId": 7,
+            "name": "*.example.com",
+            "bountyTierId": 2,
+            "description": "This scope (*.example.com) is for critical RCE vulnerabilities only."
+          },
+          {
+            "typeId": 7,
+            "name": "*.example.net",
+            "bountyTierId": 2,
+            "description": "This scope (*.example.net) is for critical RCE vulnerabilities only."
+          }
+        ]
+      }
+    },
+    {
+      "createdAt": 1738849281,
+      "content": {
+        "assetsAndGroups": [
+          {
+            "typeId": 7,
+            "name": "*.account.api.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 7,
+            "name": "*.account.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 7,
+            "name": "*.graph.example.net",
+            "bountyTierId": 3,
+            "description": "Including, but not limited to, following applications:\nhttps://predictor.graph.example.net/\nhttps://profile.graph.example.net/\n"
+          },
+          {
+            "typeId": 7,
+            "name": "*.router.example.net",
+            "bountyTierId": 3,
+            "description": "Including, but not limited to, following applications:\nhttps://matrix.router.example.net/\nhttps://transit.router.example.net/"
+          },
+          {
+            "typeId": 7,
+            "name": "*.svc.api.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 7,
+            "name": "*.edge-router.example.net",
+            "bountyTierId": 3,
+            "description": "Including, but not limited to, following application:\nhttps://vip.edge-router.example.net/\n"
+          },
+          {
+            "typeId": 3,
+            "name": "111222333",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 2,
+            "name": "com.example.app.maps",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 1,
+            "name": "https://alpha.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 1,
+            "name": "https://beta.example.com",
+            "bountyTierId": 3,
+            "description": null
+          },
+          {
+            "typeId": 6,
+            "name": "Leaked/compromised employee accounts *.example.com",
+            "bountyTierId": 3,
+            "description": "Any leaked/compromised employee accounts within the domain @example.com for any service in domains *.example.com (excluding unverified accounts on account.example.com) and sso.example.org. If you come across any such accounts, please notify us; valid and non-duplicate reports are accepted with Low/Medium severity."
+          },
+          {
+            "typeId": 7,
+            "name": "*.example.com",
+            "bountyTierId": 2,
+            "description": "This scope (*.example.com) is for critical RCE vulnerabilities only."
+          },
+          {
+            "typeId": 7,
+            "name": "*.example.net",
+            "bountyTierId": 2,
+            "description": "This scope (*.example.net) is for critical RCE vulnerabilities only."
+          }
+        ]
+      }
+    }
+  ],
+  "bountyTables": [
+    {
+      "createdAt": 1665068453,
+      "content": {
+        "currency": "EUR",
+        "bountyRows": [
+          {
+            "bountyRanges": [
+              {
+                "minScore": 0.1,
+                "maxScore": 3.9,
+                "minBounty": { "value": 50.0, "currency": "EUR" },
+                "maxBounty": { "value": 50.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 4.0,
+                "maxScore": 6.9,
+                "minBounty": { "value": 250.0, "currency": "EUR" },
+                "maxBounty": { "value": 250.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 9.5,
+                "maxScore": 10.0,
+                "minBounty": { "value": 2000.0, "currency": "EUR" },
+                "maxBounty": { "value": 2000.0, "currency": "EUR" }
+              }
+            ],
+            "bountyTierId": 3
+          },
+          {
+            "bountyRanges": [
+              {
+                "minScore": 0.1,
+                "maxScore": 3.9,
+                "minBounty": { "value": 0.0, "currency": "EUR" },
+                "maxBounty": { "value": 0.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 9.5,
+                "maxScore": 10.0,
+                "minBounty": { "value": 1000.0, "currency": "EUR" },
+                "maxBounty": { "value": 1000.0, "currency": "EUR" }
+              }
+            ],
+            "bountyTierId": 2
+          }
+        ],
+        "rewardPolicy": null
+      }
+    },
+    {
+      "createdAt": 1705705701,
+      "content": {
+        "currency": "EUR",
+        "bountyRows": [
+          {
+            "bountyRanges": [
+              {
+                "minScore": 0.1,
+                "maxScore": 3.9,
+                "minBounty": { "value": 50.0, "currency": "EUR" },
+                "maxBounty": { "value": 50.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 4.0,
+                "maxScore": 6.9,
+                "minBounty": { "value": 250.0, "currency": "EUR" },
+                "maxBounty": { "value": 250.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 7.0,
+                "maxScore": 8.9,
+                "minBounty": { "value": 1000.0, "currency": "EUR" },
+                "maxBounty": { "value": 1000.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 9.5,
+                "maxScore": 10.0,
+                "minBounty": { "value": 2000.0, "currency": "EUR" },
+                "maxBounty": { "value": 2000.0, "currency": "EUR" }
+              }
+            ],
+            "bountyTierId": 3
+          },
+          {
+            "bountyRanges": [
+              {
+                "minScore": 0.1,
+                "maxScore": 3.9,
+                "minBounty": { "value": 0.0, "currency": "EUR" },
+                "maxBounty": { "value": 0.0, "currency": "EUR" }
+              },
+              {
+                "minScore": 9.5,
+                "maxScore": 10.0,
+                "minBounty": { "value": 1000.0, "currency": "EUR" },
+                "maxBounty": { "value": 1000.0, "currency": "EUR" }
+              }
+            ],
+            "bountyTierId": 2
+          }
+        ],
+        "rewardPolicy": null
+      }
+    }
+  ],
+  "rulesOfEngagements": [
+    {
+      "createdAt": 1630996471,
+      "content": {
+        "content": {
+          "description": "\n#### Our promise to you\nWe aim to respond to every report within a few business days and keep you updated.\n\n#### Your promise to us\n* All reports should be written in English.\n* Provide detailed but to-the-point reproduction steps.\n* Please do not use automatic scanners; test manually.\n",
+          "testingRequirements": null,
+          "safeHarbour": true,
+          "createdAt": 1630996471
+        }
+      }
+    },
+    {
+      "createdAt": 1738849006,
+      "content": {
+        "content": {
+          "description": "\n#### Our promise to you\nWe aim to respond to every report within a few business days and keep you updated.\n\n#### Your promise to us\n* All reports should be written in English.\n* Provide detailed but to-the-point reproduction steps.\n* Please do not use automatic scanners; test manually.\n",
+          "testingRequirements": {
+            "intigritiMe": true,
+            "automatedTooling": 5,
+            "userAgent": "",
+            "requestHeader": "X-Bug-Bounty: <username>"
+          },
+          "safeHarbour": true,
+          "createdAt": 1738849006
+        }
+      }
+    }
+  ],
+  "inScopes": [
+    {
+      "createdAt": 1721239221,
+      "content": {
+        "content": "We are happy to announce our bug bounty program!\n\n#### Application\n\n**Key objectives**:\n* Authentication bypass\n* Authorization bypass\n* Infrastructure access\n\nWe are particularly interested, but not limited to, in:\n* Horizontal or vertical privilege escalation\n* XSS (no self-XSS)\n* RCE\n* Injection (SQL/NoSQL/LDAP)\n* Broken authentication\n* Sensitive data exposure\n* XXE\n* Broken Access Control\n* Insecure Deserialization\n\n#### Mobile\n* SSO implementation\n* Exposed data (shared libraries, exported components)\n* Issues with deep links\n* Information disclosure through APIs\n\n#### Employee user accounts\n* Active employee accounts within the domain @example.com for any service in domains *.example.com (excluding unverified accounts on account.example.com) and sso.example.org.\n"
+      }
+    }
+  ],
+  "outOfScopes": [
+    {
+      "createdAt": 1774453763,
+      "content": {
+        "content": "#### Application\n\n* API key disclosure without proven business impact\n* Self-XSS that cannot be used to exploit other users\n* Missing security headers\n* Missing cookie flags\n* Clickjacking without proven impact\n* Username/email enumeration\n* Bypassing rate-limits or the non-existence of rate-limits\n* HTTP Request smuggling without any proven impact\n* Blind SSRF without proven business impact\n\n#### The following tests are prohibited\n* **Brute Force / Automated Scans**\n\t- It is prohibited to perform automated scans / brute force attempts.\n\t- It is prohibited to perform more than 10 requests per second.\n* **Denial of Service**\n\t- Denial of Service\n\t- Distributed Denial of Service\n\t- Any similar high load testing\n\n#### Out of scope domains\n* Any domain that is not listed in the Domains section is out of scope for this program."
+      }
+    }
+  ]
+}

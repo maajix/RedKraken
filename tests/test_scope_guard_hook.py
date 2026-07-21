@@ -68,6 +68,22 @@ CASES = [
     ("curl http://127.0.0.1:18080/", {"http://127.0.0.1:18080/"}),
     ("curl --proxy http://proxy.other.net:8080 https://app.example.com/",
      {"http://proxy.other.net:8080", "https://app.example.com/"}),
+    # URL-as-data: a URL inside a pure data-processing statement (grep/echo/sed/
+    # jq over a recon list) is DATA being filtered, not a destination -> no host.
+    ("grep -F https://evil.other.org/ urls.txt", set()),
+    ("echo https://evil.other.org/a https://evil.other.org/b", set()),
+    # network output piped to a data filter: only the network statement's host is
+    # a candidate; the filter's URL argument is data.
+    ("gau app.example.com | grep https://evil.other.org", {"app.example.com"}),
+    # ...but an egress-capable interpreter still contributes its inline URL, so a
+    # `python3 -c os.system('curl <oos>')` egress stays visible to scope.
+    ("python3 -c \"import os; os.system('curl https://evil.other.org/')\"",
+     {"https://evil.other.org/"}),
+    # info flags (--version/--help/-V, and -h except host-taking tools like nikto)
+    # print text without egress -> no target candidate.
+    ("curl --version", set()),
+    ("nc -h", set()),
+    ("nikto -h app.example.com", {"app.example.com"}),
 ]
 
 

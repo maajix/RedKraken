@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from audit_event import append_event
+from egress_containment import containment_state, launch_event, provision_containment
 from harness_config import ConfigError, config_sha256, engagement_yaml, load_engagement
 from secure_engagement import secure_engagement
 
@@ -153,6 +155,12 @@ def main(argv: list[str]) -> int:
         state.chmod(0o700)
         evidence.chmod(0o700)
         secure_engagement(directory)
+        # Establish the egress-containment boundary at the same point the run
+        # identity is established. No-op when the toggle is off (runtime
+        # unchanged); fails closed (ConfigError -> rc 2) when enabled but a
+        # prerequisite is missing, so a broken boundary blocks the run rather
+        # than degrading to open egress. Idempotent across resume.
+        containment = provision_containment(config, directory)
         run_path = state / "run.json"
         if run_path.exists():
             previous = json.loads(run_path.read_text(encoding="utf-8"))
@@ -175,6 +183,7 @@ def main(argv: list[str]) -> int:
             record_phase(previous, args.mode)
             previous["last_verified"] = now()
             previous["tool_paths"] = tool_paths()
+            previous["containment"] = containment_state(containment)
             atomic_json(run_path, previous)
             result = "RESUME"
         else:
@@ -185,10 +194,15 @@ def main(argv: list[str]) -> int:
                 "started_at": now(),
                 "last_verified": now(),
                 "tool_paths": tool_paths(),
+                "containment": containment_state(containment),
             }
             record_phase(payload, args.mode)
             atomic_json(run_path, payload)
             result = "NEW_RUN"
+        try:
+            append_event(directory, launch_event(containment))
+        except (OSError, ValueError) as exc:
+            print(f"run_context: containment audit event skipped: {exc}", file=sys.stderr)
         active = ROOT / ".active_engagement"
         active.write_text(str(directory.resolve()) + "\n", encoding="utf-8")
         active.chmod(0o600)
