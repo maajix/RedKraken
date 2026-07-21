@@ -77,6 +77,17 @@ CASES = [
     # to static analysis -> fail closed (targetless block), prefix or not.
     ("variable-target network command blocked", 'curl "$URL"', GOOD_ENGAGEMENT, True),
     ("sudo variable-target network command blocked", 'sudo nmap "$URL"', GOOD_ENGAGEMENT, True),
+    # `command -v <tool>` / `builtin -V <tool>` is shell name resolution, not an
+    # executed network command -- it is the harness's own tool-preflight idiom and
+    # must not be blocked for "no verifiable target". The exemption must not leak
+    # past a separator, and `command <tool>` (real exec) stays fully gated.
+    ("command -v preflight lookup of network tool allowed",
+     'command -v nc >/dev/null 2>&1 || echo "MISSING:nc"', GOOD_ENGAGEMENT, False),
+    ("builtin -V lookup of network tool allowed", "builtin -V curl", GOOD_ENGAGEMENT, False),
+    ("command -v lookup then out-of-scope exec still blocked",
+     "command -v curl >/dev/null && curl https://evil.other.org/", GOOD_ENGAGEMENT, True),
+    ("command-prefixed out-of-scope real exec still blocked",
+     "command curl https://evil.other.org/", GOOD_ENGAGEMENT, True),
     # Loopback scope-proxy endpoints are transport, not targets. These mirror
     # direct CLI and documented wrapper invocations while preserving fail-closed
     # checks for the actual destination and for arbitrary proxies.
@@ -102,6 +113,30 @@ CASES = [
     ("non-loopback proxy remains blocked",
      "curl --proxy http://proxy.other.net:8080 https://app.example.com/",
      GOOD_ENGAGEMENT, True),
+    # URL-as-data: an out-of-scope URL that is only DATA to a local data-processing
+    # command (grep/echo/awk/jq/sed over a recon list, including piped network
+    # output) is not egress -> allowed. This lets hunters analyse passive-recon
+    # output inline instead of forcing a script-file bypass...
+    ("out-of-scope url as grep data allowed",
+     "grep -F https://evil.other.org/ urls.txt", GOOD_ENGAGEMENT, False),
+    ("out-of-scope urls as echo data allowed",
+     "echo https://evil.other.org/a https://evil.other.org/b", GOOD_ENGAGEMENT, False),
+    ("network output piped to grep of out-of-scope url allowed",
+     "gau app.example.com | grep https://evil.other.org", GOOD_ENGAGEMENT, False),
+    # ...while an egress-capable interpreter still fails closed: python3 is not a
+    # data-processing command, so its inline os.system egress is scope-checked.
+    ("python3 inline os.system out-of-scope egress still blocked",
+     "python3 -c \"import os; os.system('curl https://evil.other.org/')\"",
+     GOOD_ENGAGEMENT, True),
+    # Info flags: a network tool invoked only to print version/help needs no
+    # verifiable target -> allowed (same class as the `command -v` preflight). The
+    # allowance is per whole-command: a real egress in a later statement is still
+    # gated because not every network statement was info-only.
+    ("curl --version info flag allowed", "curl --version", GOOD_ENGAGEMENT, False),
+    ("wget --help info flag allowed", "wget --help", GOOD_ENGAGEMENT, False),
+    ("nc -h help allowed", "nc -h", GOOD_ENGAGEMENT, False),
+    ("info flag then out-of-scope egress still blocked",
+     "curl --version; curl https://evil.other.org/", GOOD_ENGAGEMENT, True),
 ]
 
 
@@ -143,6 +178,29 @@ def test_secret_redacted_in_block_event():
     logged = json.dumps(blocks[0])
     assert TOKEN_PLACEHOLDER not in logged, f"synthetic token leaked into audit: {logged}"
     assert "<redacted>" in blocks[0]["command"], blocks[0]["command"]
+
+
+def test_list_file_flag_reads_and_scopes_targets():
+    """subfinder -dL / amass -df batch targets from an inspectable file (the
+    sanctioned alternative to one invocation per domain). Every listed target is
+    scope-checked: an in-scope file is allowed, an out-of-scope one is blocked."""
+    if not GUARD.is_file():
+        import pytest
+        pytest.skip("scope_guard.py not present (.claude/hooks missing)")
+    with tempfile.TemporaryDirectory() as directory:
+        in_scope = Path(directory) / "in.txt"
+        in_scope.write_text("app.example.com\napi.example.com\n", encoding="utf-8")
+        oos = Path(directory) / "oos.txt"
+        oos.write_text("evil.other.org\n", encoding="utf-8")
+        failures = [
+            msg for name, cmd, blk in [
+                ("subfinder -dL in-scope file allowed", f"subfinder -dL {in_scope}", False),
+                ("subfinder -dL out-of-scope file blocked", f"subfinder -dL {oos}", True),
+                ("amass -df out-of-scope file blocked", f"amass enum -df {oos}", True),
+            ]
+            if (msg := check(name, cmd, GOOD_ENGAGEMENT, blk))
+        ]
+        assert not failures, "\n".join(failures)
 
 
 if __name__ == "__main__":

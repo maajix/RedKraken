@@ -39,6 +39,20 @@ NETWORK_TOOL_EXEMPTIONS = {
     "playwright": "installer or launcher; target traffic uses scoped browser proxy",
     "zaproxy": "daemon launcher; target traffic uses scoped proxy workflow",
 }
+# Pure local data-processing commands: they never open a network connection, so a
+# URL that appears in one of their statements is DATA (a pattern, a line being
+# filtered, a field), not a destination. Statements led by these are not treated
+# as egress, so out-of-scope URLs in passive-recon output (gau/waybackurls lists)
+# can be analysed inline instead of forcing a script-file bypass. Anything not
+# listed here stays egress-capable (fail closed): python3, bash, unknown tools.
+DATA_PROCESSING = {
+    "grep", "egrep", "fgrep", "rg", "echo", "printf", "cat", "tac", "head",
+    "tail", "sort", "uniq", "awk", "gawk", "mawk", "nawk", "sed", "cut", "tr",
+    "wc", "jq", "yq", "comm", "join", "paste", "column", "nl", "rev", "tee",
+    "fold", "less", "more", "diff", "cmp", "base64", "xxd", "od", "strings",
+    "dirname", "basename", "realpath", "readlink", "seq", "expand", "unexpand",
+    "split", "csplit", "shuf",
+}
 # Unambiguous "the next token is a target host/url" flags. Short ambiguous flags
 # (-d, -t) are handled tool-aware below because they collide with data/threads.
 TARGET_FLAGS = {
@@ -47,7 +61,15 @@ TARGET_FLAGS = {
 }
 # Tools where "-d <value>" means a target DOMAIN (else it's POST data, e.g. curl).
 DOMAIN_D_TOOLS = {"subfinder", "amass"}
+# Tool-specific list-file flags: "<flag> file" batches targets from an inspectable
+# file (the sanctioned, MORE-checkable pattern) instead of one invocation each.
+LIST_FILE_FLAGS = {"subfinder": {"-dL", "-dl"}, "amass": {"-df"}}
 INPUT_FLAGS = {"-l", "-list", "--list", "--input-file", "-iL", "-K", "--config"}
+# A network tool invoked purely to print version/help does not egress, so it needs
+# no verifiable target -- same class as the `command -v <tool>` preflight idiom.
+INFO_FLAGS = {"--version", "-version", "-V", "--help", "--usage", "-usage"}
+# Tools where "-h <value>" is the target HOST rather than a help flag.
+HOST_H_TOOLS = {"nikto"}
 VALUE_FLAGS = {
     "-H", "--header", "-A", "--user-agent", "-X", "--request", "-w", "--wordlist",
     "-o", "--output", "-D", "--dump-header", "-c", "--concurrency", "-rl",
@@ -174,32 +196,61 @@ def targets_from_file(value: str) -> list[str]:
     return targets
 
 
-def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
-    candidates: list[str] = []
-    network_cmd = False   # a network tool actually invoked in command position
+def _scan_tokens(
+    tokens: list[str], command: str
+) -> tuple[bool, list[str], list[str], int, int]:
+    host_candidates: list[str] = []
+    url_candidates: list[str] = []
+    network_cmd = False    # a network tool actually invoked in command position
+    stmt_summaries: list[tuple[bool, bool]] = []  # (network, info-only) per statement
     active_tool = ""
-    cmd_pos = True        # the next ordinary word is a command being executed
-    loose = False         # a transparent prefix put us in fail-closed over-include
+    cmd_pos = True         # the next ordinary word is a command being executed
+    loose = False          # a transparent prefix put us in fail-closed over-include
     skip_value = False
     target_value = False
     input_value = False
+    command_prefix = False  # inside a `command`/`builtin` invocation
+    lookup = False          # `command -v`/`-V`: shell name resolution, not exec
+    stmt_egress = True      # statement egresses unless its command is pure data-processing
+    stmt_network = False    # a network tool was the command of this statement
+    stmt_info = False       # that network tool was invoked info-only (--version/-h/…)
+    stmt_tokens: list[str] = []
+
+    def flush() -> None:
+        # A statement contributes URL candidates only when it can actually egress.
+        # Pure data-processing statements (grep/echo/awk/jq over a URL list) carry
+        # URLs as DATA, not destinations, so their URLs are not scope-checked.
+        if stmt_egress:
+            for match in URL_RE.findall(" ".join(stmt_tokens)):
+                cleaned = clean_candidate(match)
+                if cleaned:
+                    url_candidates.append(cleaned)
+        stmt_summaries.append((stmt_network, stmt_info))
+
     for token in tokens:
         if token in {"|", "||", "&&", ";", "&"}:
+            flush()
             active_tool = ""
             cmd_pos = True
             loose = False
             skip_value = target_value = input_value = False
+            command_prefix = lookup = False
+            stmt_egress = True
+            stmt_network = False
+            stmt_info = False
+            stmt_tokens = []
             continue
+        stmt_tokens.append(token)
         if token in {">", ">>", "<", "2>", "2>>", "1>", "&>", "&>>"}:
             skip_value = True  # the following token is a redirect target file
             continue
         if target_value:
-            candidates.append(clean_candidate(token))
+            host_candidates.append(clean_candidate(token))
             target_value = False
             cmd_pos = False
             continue
         if input_value:
-            candidates.extend(targets_from_file(token))
+            host_candidates.extend(targets_from_file(token))
             input_value = False
             cmd_pos = False
             continue
@@ -214,29 +265,55 @@ def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
         # run the following token, so they hold the command position open AND set
         # `loose`, keeping a network tool later in the statement fail-closed.
         if cmd_pos:
+            if command_prefix and token in {"-v", "-V"}:
+                # `command -v nc` / `builtin -V curl`: shell name resolution, not
+                # an executed network command. Inspecting a tool's presence must
+                # not require a target -- it is the harness's own preflight idiom.
+                lookup = True
+                continue
             if token.startswith("-") or ASSIGN_RE.match(token):
                 continue  # a prefix's own flag or NAME=value; stay at command pos
+            if basename in {"command", "builtin"}:
+                loose = True
+                command_prefix = True
+                continue
             if basename in PREFIX_COMMANDS:
                 loose = True
                 continue
             cmd_pos = False
+            if lookup:
+                continue  # a resolved-but-unexecuted name carries no target
             if basename in NETWORK_TOOLS:
                 network_cmd = True
+                stmt_network = True
                 active_tool = basename
                 continue
             if basename in {"python", "python3"} and GENERIC_NETWORK_RE.search(command):
                 network_cmd = True
+                stmt_network = True
                 active_tool = basename
                 continue
-            # a non-network command; fall through with no active_tool set
+            if not loose and basename in DATA_PROCESSING:
+                stmt_egress = False  # pure data-processing statement: URLs are data
+            # else: unknown command -> stmt_egress stays True (fail closed)
         elif loose and basename in NETWORK_TOOLS:
             network_cmd = True
+            stmt_network = True
             active_tool = basename
             continue
         # Only interpret target/input/value flags while a network tool is the
         # active command; otherwise "-l"/"-d"/"-t" on plain commands (wc -l,
         # tr -d, sort -t) would be misread as targets or trigger file reads.
         if active_tool:
+            if token in INFO_FLAGS:
+                stmt_info = True  # version/help: invoked but not egressing
+                continue
+            if token in {"-h", "-help"}:
+                if active_tool in HOST_H_TOOLS:
+                    target_value = True  # nikto -h <host>
+                else:
+                    stmt_info = True     # help text, not a target
+                continue
             if token in TARGET_FLAGS:
                 target_value = True
                 continue
@@ -245,6 +322,9 @@ def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
                     target_value = True
                 else:  # curl/sqlmap/wpscan: -d is request/POST data, not a host
                     skip_value = True
+                continue
+            if token in LIST_FILE_FLAGS.get(active_tool, frozenset()):
+                input_value = True  # subfinder -dL / amass -df: inspectable target file
                 continue
             if token in INPUT_FLAGS:
                 input_value = True
@@ -262,13 +342,15 @@ def _scan_tokens(tokens: list[str], command: str) -> tuple[bool, list[str]]:
                 "." in cand and bool(HOST_TOKEN_RE.fullmatch(cand))
             )
             if host_like and cand.upper() not in {"GET", "POST", "PUT", "PATCH", "DELETE"} and not Path(token).is_file():
-                candidates.append(cand)
+                host_candidates.append(cand)
                 active_tool = ""
-    return network_cmd, candidates
+    flush()
+    network_stmt_count = sum(1 for net, _ in stmt_summaries if net)
+    info_stmt_count = sum(1 for net, info in stmt_summaries if net and info)
+    return network_cmd, host_candidates, url_candidates, network_stmt_count, info_stmt_count
 
 
-def extract(command: str) -> tuple[bool, list[str]]:
-    url_candidates = [clean_candidate(value) for value in URL_RE.findall(command)]
+def extract(command: str) -> tuple[bool, list[str], bool]:
     # Scan each newline-separated statement with fresh state so a network tool
     # on one line cannot leak `active_tool` onto the next (which would misread a
     # later dotted filename like `cat out.txt` as a host). If a quoted argument
@@ -285,22 +367,38 @@ def extract(command: str) -> tuple[bool, list[str]]:
         except ValueError as exc:
             if any(re.search(rf"\b{re.escape(tool)}\b", command) for tool in NETWORK_TOOLS):
                 raise ConfigError(f"cannot parse network command: {exc}") from exc
-            return False, list(dict.fromkeys(v for v in url_candidates if v))
+            urls = [clean_candidate(value) for value in URL_RE.findall(command)]
+            return False, list(dict.fromkeys(v for v in urls if v)), False
 
     proxy_values = loopback_proxy_values(token_lists)
-    candidates: list[str] = []
-    for value in url_candidates:
-        if proxy_values[value] > 0:
-            proxy_values[value] -= 1
-        else:
-            candidates.append(value)
 
     network_seen = False
+    host_candidates: list[str] = []
+    url_candidates: list[str] = []
+    network_stmt_count = 0
+    info_stmt_count = 0
     for tokens in token_lists:
-        seen, cands = _scan_tokens(tokens, command)
+        seen, hosts, urls, net_ct, info_ct = _scan_tokens(tokens, command)
         network_seen = network_seen or seen
-        candidates.extend(cands)
-    return network_seen, list(dict.fromkeys(value for value in candidates if value))
+        host_candidates.extend(hosts)
+        url_candidates.extend(urls)
+        network_stmt_count += net_ct
+        info_stmt_count += info_ct
+
+    # A recognized loopback proxy is transport, not a destination: subtract one
+    # URL occurrence per counted proxy use so the real target stays visible.
+    kept_urls: list[str] = []
+    for value in url_candidates:
+        if proxy_values.get(value, 0) > 0:
+            proxy_values[value] -= 1
+        else:
+            kept_urls.append(value)
+
+    candidates = list(dict.fromkeys(value for value in (host_candidates + kept_urls) if value))
+    # A command is "targetless" only if every network statement was info-only; a
+    # single real egress with no verifiable target still fails closed.
+    all_network_info_only = network_stmt_count > 0 and info_stmt_count == network_stmt_count
+    return network_seen, candidates, all_network_info_only
 
 
 def main() -> int:
@@ -313,11 +411,11 @@ def main() -> int:
     if not command:
         return 0
     try:
-        network_seen, candidates = extract(command)
-        if not network_seen and not candidates:
-            return 0
-        if network_seen and not candidates:
+        network_seen, candidates, info_only = extract(command)
+        if network_seen and not candidates and not info_only:
             raise ConfigError("network command has no statically verifiable target; use explicit targets or an inspectable target file")
+        if not candidates:
+            return 0
         yaml_path = resolve_engagement(None, root=ROOT)
         config = load_engagement(yaml_path)
         for candidate in candidates:
