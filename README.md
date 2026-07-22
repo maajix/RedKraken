@@ -88,16 +88,17 @@ change, RedKraken stops instead of mixing results from different runs.
    hosts/CIDRs, applies deny precedence, and fails closed.
 2. `.claude/hooks/scope_guard_hook.sh` rejects recognizable network commands with
    out-of-scope or non-static targets before shell execution.
-3. `scripts/start_scope_proxy.sh` applies scope and time-window policy to every
-   HTTP(S) request. Browser and schema-driven wrappers require this proxy.
+3. `scripts/start_scope_proxy.sh` supervises the one enforcement proxy;
+   `scripts/run_scoped_http.sh` routes hook-visible HTTP tools through it without
+   inherited proxy bypasses.
 4. Agent skills enforce intent, destructive-action approval, untrusted-content
    isolation, evidence requirements, and explicit tool-gap reporting.
 
 The hook is heuristic; the proxy is the stronger HTTP enforcement boundary.
-RedKraken starts and configures that proxy for supported HTTP tools. For non-HTTP
-tools or stronger isolation, use an OS/network egress policy that can reach only
-authorized targets. Optional rate limits are configured per engagement and may
-be tightened per tool.
+RedKraken starts and configures that proxy for supported HTTP tools. Generated
+engagement scripts are offline-only; network-capable helpers must be reviewed
+root `scripts/` entry points. For stronger isolation, enable the optional OS-level
+egress boundary. Rate limits may be tightened per tool.
 
 ## Automated browser and API workflows
 
@@ -119,6 +120,10 @@ the others.
 - `state/findings.jsonl`: schema-validated, locked, atomic finding upserts.
 - `audit.jsonl`: redacted hash-chained command/result/proxy-policy audit events.
 - `state/scan-raw/`: scanner output and deterministic seeds/replay material.
+- `state/scripts/`: reusable, offline helpers specific to this engagement.
+- `state/scratch/`: disposable notes and throwaway code.
+- `state/notes.md`: durable non-secret environment facts; tooling friction goes
+  in `state/harness-issues.md`.
 - `evidence/<finding>/`: request/response, trace, screenshot, and cleanup proof.
 - `report.md`: deterministic rendering with evidence path checks and hashes.
 
@@ -168,7 +173,7 @@ lib/              config, scope, proxy, audit, findings, run context, preflight
 playbooks/        topic modules, one catalog, metadata, and code-review packs
 scope/            engagement template
 engagements/      per-target state/evidence/reports (gitignored)
-scripts/          KB, proxy, browser/API, and report entry points
+scripts/          reviewed cross-engagement entry points (see scripts/README.md)
 schemas/          finding JSON schema
 tests/            existing harness checks
 ```

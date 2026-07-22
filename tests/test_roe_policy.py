@@ -88,6 +88,12 @@ class RoeAuthorizationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ConfigError, f"{gate} must be true or false"):
                     self.load(f"{gate}: yes-please\n")
 
+    def test_raw_egress_self_contained_requires_a_boolean(self) -> None:
+        with self.assertRaisesRegex(
+            ConfigError, "raw_egress_self_contained must be true or false"
+        ):
+            self.load("raw_egress_self_contained: yes-please\n")
+
     def test_example_and_agent_guidance_name_every_independent_gate(self) -> None:
         documents = [
             ROOT / "scope" / "engagement.example.yaml",
@@ -160,7 +166,7 @@ class RoeAuthorizationTests(unittest.TestCase):
             {"requests_per_second": 5.0, "burst": 5, "max_concurrency": 2},
         )
 
-    def test_direct_request_contract_serializes_rate_limited_work_and_applies_headers(self) -> None:
+    def test_proxy_request_contract_serializes_work_and_applies_headers(self) -> None:
         documents = {
             "loop": ROOT / ".claude/skills/web-pentest-loop/SKILL.md",
             "hunter": ROOT / ".claude/agents/web-vuln-hunter.md",
@@ -168,20 +174,21 @@ class RoeAuthorizationTests(unittest.TestCase):
             "scope": ROOT / ".claude/skills/scope-guard/SKILL.md",
         }
         text = {
-            name: path.read_text(encoding="utf-8").casefold()
+            name: " ".join(path.read_text(encoding="utf-8").casefold().split())
             for name, path in documents.items()
         }
         self.assertIn("dispatch one family at a time", text["loop"])
         self.assertIn("required_headers", text["loop"])
-        self.assertIn("proxy environment", text["loop"])
+        self.assertIn("scripts/run_scoped_http.sh", text["loop"])
         for name in ("hunter", "recon"):
             with self.subTest(document=name):
                 self.assertIn("required_headers", text[name])
                 self.assertIn("one target-touching tool", text[name])
-                self.assertIn("tool-native header", text[name])
+                self.assertIn("scripts/run_scoped_http.sh", text[name])
                 self.assertIn("not-tested", text[name])
         self.assertIn("required_headers", text["scope"])
         self.assertIn("one worker", text["scope"])
+        self.assertIn("no_proxy", text["scope"])
 
 
 if __name__ == "__main__":

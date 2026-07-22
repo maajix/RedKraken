@@ -91,11 +91,38 @@ class AuthorizeGateTests(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertIn("toggle off", decision.reason)
 
-    def test_missing_availability_roe_is_denied(self) -> None:
-        # The live-engagement reality: lane could be on, but RoE withholds it.
+    def test_missing_both_roe_gates_is_denied(self) -> None:
+        # Lane on, but neither RoE authorization granted -> fail closed, and the
+        # reason names both acceptable paths.
         decision = re.authorize(cfg(raw_egress_lane=True), "https://app.example.com/")
         self.assertFalse(decision.allowed)
         self.assertIn("availability_impact_allowed", decision.reason)
+        self.assertIn("raw_egress_self_contained", decision.reason)
+
+    def test_self_contained_gate_authorizes_without_availability(self) -> None:
+        # The narrow path: non-availability framing tests are authorized by
+        # raw_egress_self_contained alone, with availability impact still denied.
+        decision = re.authorize(
+            cfg(raw_egress_lane=True, raw_egress_self_contained=True),
+            "https://app.example.com/",
+        )
+        self.assertTrue(decision.allowed)
+
+    def test_self_contained_without_lane_toggle_is_denied(self) -> None:
+        # The RoE authorization never substitutes for the operator opt-in toggle.
+        decision = re.authorize(
+            cfg(raw_egress_self_contained=True), "https://app.example.com/"
+        )
+        self.assertFalse(decision.allowed)
+        self.assertIn("toggle off", decision.reason)
+
+    def test_self_contained_still_gated_by_scope(self) -> None:
+        decision = re.authorize(
+            cfg(raw_egress_lane=True, raw_egress_self_contained=True),
+            "https://evil.other.org/",
+        )
+        self.assertFalse(decision.allowed)
+        self.assertIn("out of scope", decision.reason)
 
     def test_out_of_scope_is_denied(self) -> None:
         decision = re.authorize(enabled(), "https://evil.other.org/")

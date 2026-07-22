@@ -150,10 +150,15 @@ def main(argv: list[str]) -> int:
         state = directory / "state"
         evidence = directory / "evidence"
         directory.chmod(0o700)
-        state.mkdir(parents=True, exist_ok=True, mode=0o700)
-        evidence.mkdir(parents=True, exist_ok=True, mode=0o700)
-        state.chmod(0o700)
-        evidence.chmod(0o700)
+        for path in (
+            state,
+            evidence,
+            state / "scan-raw",
+            state / "scripts",
+            state / "scratch",
+        ):
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path.chmod(0o700)
         secure_engagement(directory)
         # Establish the egress-containment boundary at the same point the run
         # identity is established. No-op when the toggle is off (runtime

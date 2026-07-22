@@ -13,17 +13,18 @@ target) and is therefore gated behind TWO independent, fail-closed checks that
 must both pass, plus scope:
 
 1. an explicit operator toggle (``raw_egress_lane``), off by default;
-2. the RoE authorization ``availability_impact_allowed`` -- byte-level framing
-   manipulation can poison connection/response queues and affect availability;
+2. an RoE authorization for what the lane may do -- EITHER
+   ``availability_impact_allowed`` (full: byte-level framing may poison
+   connection/response queues, an availability impact) OR the narrower
+   ``raw_egress_self_contained`` (non-availability only: single-connection
+   control-bypass / internal-reach with no shared-socket poisoning, victim
+   capture, cache poisoning, or DoS). At least one must be granted;
 3. the destination must be in scope, decided by the one shared policy
    (``harness_config.scope_decision``) -- never a forked check.
 
 Confinement to in-scope destinations at the network layer is the L3/L4 boundary
 of RedKraken #17 (see docs/adr/0001-egress-containment-boundary.md); this module
-is the byte-transparent lane that boundary is designed to host. In the current
-live engagement the lane stays denied: ``availability_impact_allowed`` is false
-(RoE) and it is off by default -- so the family is blocked-pending-infra + RoE,
-not exhausted.
+is the byte-transparent lane that boundary is designed to host.
 
 The socket factory and audit sink are injected, so authorization and
 byte-transparency are unit-tested without touching the network. The CLI is a
@@ -55,6 +56,7 @@ from harness_config import (
 ROOT = Path(__file__).resolve().parent.parent
 
 TOGGLE_KEY = "raw_egress_lane"
+SELF_CONTAINED_KEY = "raw_egress_self_contained"
 RAW_EVENT = "raw-egress"
 DEFAULT_TIMEOUT = 10.0
 DEFAULT_READ_LIMIT = 65536
@@ -78,6 +80,26 @@ class Connection(Protocol):
 def raw_egress_enabled(config: dict) -> bool:
     """Opt-in and fail-safe: only an explicit boolean ``True`` enables the lane."""
     return config.get(TOGGLE_KEY) is True
+
+
+def raw_egress_self_contained(config: dict) -> bool:
+    """Narrow, lane-local authorization for NON-availability-affecting framing tests.
+
+    The raw lane's second gate exists because byte-transparent egress can poison
+    connection/response queues (an availability impact). But some framing-family
+    impact -- front-end control bypass, reaching internal systems -- is proven on
+    the tester's OWN single connection (send, read the internal response, close),
+    with no shared-socket poisoning, no victim-request capture, no cache poisoning
+    and no DoS. That subset does not require ``availability_impact_allowed``.
+
+    This gate is the operator's explicit affirmation that the lane will be used
+    only for such self-contained tests. Like every gate here it fails closed:
+    only an explicit boolean ``True`` grants it. It authorizes WHAT the lane may
+    do, not WHERE -- scope is still decided by the one shared policy. The module
+    cannot technically prove a payload is self-contained; accountability is the
+    per-payload ``raw-egress`` audit trail plus operator discipline.
+    """
+    return config.get(SELF_CONTAINED_KEY) is True
 
 
 def split_target(target: str) -> tuple[str, int, bool]:
@@ -108,9 +130,11 @@ def authorize(
     """Decide whether the lane may egress to ``target``. Every gate fails closed."""
     if not raw_egress_enabled(config):
         return RawEgressDecision(False, "raw egress lane disabled (raw_egress_lane toggle off)")
-    if not roe(config).get("availability_impact_allowed"):
+    if not (roe(config).get("availability_impact_allowed") or raw_egress_self_contained(config)):
         return RawEgressDecision(
-            False, "raw egress lane requires availability_impact_allowed (RoE) to be granted"
+            False,
+            "raw egress lane requires availability_impact_allowed or "
+            "raw_egress_self_contained (RoE) to be granted",
         )
     allowed, host, reason = scope(config, target)
     if not allowed:

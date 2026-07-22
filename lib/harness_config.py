@@ -65,7 +65,14 @@ def load_engagement(path: str | os.PathLike[str]) -> dict[str, Any]:
             continue
         if not isinstance(config[key], list) or not all(isinstance(item, str) for item in config[key]):
             raise ConfigError(f"{key} must be a list of strings")
-    for key in ("destructive_allowed", "rate_limit_enabled", "egress_containment", "raw_egress_lane", *ROE_AUTHORIZATION_GATES):
+    for key in (
+        "destructive_allowed",
+        "rate_limit_enabled",
+        "egress_containment",
+        "raw_egress_lane",
+        "raw_egress_self_contained",
+        *ROE_AUTHORIZATION_GATES,
+    ):
         if key in config and not isinstance(config[key], bool):
             raise ConfigError(f"{key} must be true or false")
     for key in ("max_threads",):

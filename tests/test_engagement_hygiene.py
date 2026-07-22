@@ -104,6 +104,17 @@ class EngagementHygieneTests(unittest.TestCase):
         self.assertTrue(report["deletion_blocked"])
         self.assertTrue(all(row["action"] != "delete" for row in report["files"]))
 
+    def test_scratch_and_engagement_helpers_have_distinct_lifecycle_actions(self) -> None:
+        (self.root / "state" / "scratch").mkdir()
+        (self.root / "state" / "scripts").mkdir()
+        (self.root / "state" / "scratch" / "throwaway.py").write_text("print('local')\n")
+        (self.root / "state" / "scripts" / "normalize.py").write_text("print('local')\n")
+        rows = {row["path"]: row for row in self.report()["files"]}
+        self.assertEqual(rows["state/scratch/throwaway.py"]["action"], "delete")
+        self.assertEqual(
+            rows["state/scripts/normalize.py"]["action"], "review-for-promotion"
+        )
+
     def test_only_gitkeep_is_tracked_under_engagements(self) -> None:
         module = load_module()
         self.assertLessEqual(module.tracked_engagement_paths(ROOT), {"engagements/.gitkeep"})

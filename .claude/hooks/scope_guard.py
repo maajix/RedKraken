@@ -31,6 +31,19 @@ NETWORK_TOOLS = {
     "telnet", "testssl.sh", "tlsx", "wget", "whatweb", "waybackurls", "wfuzz",
     "wpscan", "wafw00f", "x8",
 }
+# HTTP(S)-egress tools that MUST run through the reviewed scoped-HTTP runner.
+# The runner clears inherited proxy bypasses and sets every protocol-specific
+# proxy variable; accepting a bare HTTP_PROXY or -x is unsafe because curl ignores
+# uppercase HTTP_PROXY and NO_PROXY overrides even an explicit -x. DNS/passive/
+# transport tools (subfinder,
+# dnsx, amass, gau, waybackurls, nmap, openssl, nc, ...) are deliberately NOT
+# here: they do not speak to the target over the HTTP proxy (passive archives,
+# DNS, raw TLS/sockets), so requiring the proxy would wrongly break them.
+PROXY_REQUIRED_TOOLS = {
+    "curl", "wget", "httpx", "nuclei", "ffuf", "gobuster", "feroxbuster",
+    "dirb", "dirsearch", "katana", "gospider", "hakrawler", "wfuzz", "wpscan",
+    "dalfox", "sqlmap", "arjun", "schemathesis", "x8", "whatweb", "wafw00f",
+}
 # Bash allow entries that look security-related but must not be parsed as direct
 # target tools. Keep this mapping narrow: tests reject new target-capable allow
 # entries unless they are guarded above or carry an explicit reason here.
@@ -91,6 +104,13 @@ PREFIX_COMMANDS = {
     "time", "timeout", "watch", "xargs", "command", "builtin",
     "proxychains", "proxychains4",
 }
+SCOPED_HTTP_RUNNER = (ROOT / "scripts" / "run_scoped_http.sh").resolve()
+# Shell block-openers introduce a fresh simple command (`for h in …; do curl …`,
+# `if …; then wget …`). They must reset the command position so a network tool
+# right after them is still seen as the command -- otherwise a single-line loop
+# hides egress from the guard and fails OPEN. Block-closers (done/fi/esac) do not
+# precede a command and need no handling.
+BLOCK_KEYWORDS = {"do", "then", "else"}
 ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 PROXY_FLAGS = {"--proxy", "-x"}
 PROXY_ENV_NAMES = {
@@ -171,6 +191,14 @@ def loopback_proxy_values(token_lists: list[list[str]]) -> Counter[str]:
     return proxies
 
 
+def is_scoped_http_runner(token: str) -> bool:
+    """True only for this checkout's reviewed runner, never a same-name script."""
+    candidate = Path(token).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    return candidate.resolve() == SCOPED_HTTP_RUNNER
+
+
 def targets_from_file(value: str) -> list[str]:
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -186,6 +214,10 @@ def targets_from_file(value: str) -> list[str]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        if stripped.lstrip("-").casefold() == "next" or re.match(
+            r"(?i)(?:--)?(?:proxy|preproxy|noproxy|socks\w*)(?:\s*=|\s+)", stripped
+        ):
+            raise ConfigError(f"proxy/bypass directives are not allowed in target input: {value}")
         config_match = re.match(r"(?i)url\s*=\s*(.+)", stripped)
         if config_match:
             stripped = config_match.group(1).strip().strip("\"'")
@@ -196,13 +228,33 @@ def targets_from_file(value: str) -> list[str]:
     return targets
 
 
+def split_separators(tokens: list[str]) -> list[str]:
+    """Break a `;` command separator that shlex left fused to an adjacent token.
+
+    `shlex.split("for h in $(cat s); do curl \"$h\"; done")` yields `s);` and
+    `$h;` as single tokens, so `_scan_tokens`'s statement-boundary reset (which
+    matches a standalone `;`) never fires and `curl` never reaches command
+    position -> the loop fails OPEN. `;` is unambiguously a shell command
+    separator; a `;` inside quoted data (rare, e.g. POST bodies) only yields a
+    harmless extra command-position reset, which stays fail-closed.
+    """
+    out: list[str] = []
+    for token in tokens:
+        if ";" not in token:
+            out.append(token)
+            continue
+        out.extend(part for part in re.split(r"(;)", token) if part)
+    return out
+
+
 def _scan_tokens(
     tokens: list[str], command: str
-) -> tuple[bool, list[str], list[str], int, int]:
+) -> tuple[bool, list[str], list[str], int, int, bool]:
     host_candidates: list[str] = []
     url_candidates: list[str] = []
     network_cmd = False    # a network tool actually invoked in command position
     stmt_summaries: list[tuple[bool, bool]] = []  # (network, info-only) per statement
+    needs_proxy = False    # at least one HTTP egress statement lacks the reviewed runner
     active_tool = ""
     cmd_pos = True         # the next ordinary word is a command being executed
     loose = False          # a transparent prefix put us in fail-closed over-include
@@ -214,9 +266,12 @@ def _scan_tokens(
     stmt_egress = True      # statement egresses unless its command is pure data-processing
     stmt_network = False    # a network tool was the command of this statement
     stmt_info = False       # that network tool was invoked info-only (--version/-h/…)
+    stmt_proxy_required = False
+    stmt_scoped_runner = False
     stmt_tokens: list[str] = []
 
     def flush() -> None:
+        nonlocal needs_proxy
         # A statement contributes URL candidates only when it can actually egress.
         # Pure data-processing statements (grep/echo/awk/jq over a URL list) carry
         # URLs as DATA, not destinations, so their URLs are not scope-checked.
@@ -226,6 +281,8 @@ def _scan_tokens(
                 if cleaned:
                     url_candidates.append(cleaned)
         stmt_summaries.append((stmt_network, stmt_info))
+        if stmt_network and not stmt_info and stmt_proxy_required and not stmt_scoped_runner:
+            needs_proxy = True
 
     for token in tokens:
         if token in {"|", "||", "&&", ";", "&"}:
@@ -238,6 +295,8 @@ def _scan_tokens(
             stmt_egress = True
             stmt_network = False
             stmt_info = False
+            stmt_proxy_required = False
+            stmt_scoped_runner = False
             stmt_tokens = []
             continue
         stmt_tokens.append(token)
@@ -277,8 +336,21 @@ def _scan_tokens(
                 loose = True
                 command_prefix = True
                 continue
+            if is_scoped_http_runner(token):
+                stmt_scoped_runner = True
+                loose = True
+                continue
+            if basename == SCOPED_HTTP_RUNNER.name:
+                # A same-name helper outside this checkout is an untrusted prefix:
+                # inspect the following tool, but never grant proxy transport.
+                loose = True
+                continue
             if basename in PREFIX_COMMANDS:
                 loose = True
+                continue
+            if basename in BLOCK_KEYWORDS:
+                # A block-opener precedes a fresh command; keep command position
+                # open so the following network tool is still detected.
                 continue
             cmd_pos = False
             if lookup:
@@ -287,6 +359,7 @@ def _scan_tokens(
                 network_cmd = True
                 stmt_network = True
                 active_tool = basename
+                stmt_proxy_required = basename in PROXY_REQUIRED_TOOLS
                 continue
             if basename in {"python", "python3"} and GENERIC_NETWORK_RE.search(command):
                 network_cmd = True
@@ -296,10 +369,14 @@ def _scan_tokens(
             if not loose and basename in DATA_PROCESSING:
                 stmt_egress = False  # pure data-processing statement: URLs are data
             # else: unknown command -> stmt_egress stays True (fail closed)
+        elif loose and is_scoped_http_runner(token):
+            stmt_scoped_runner = True
+            continue
         elif loose and basename in NETWORK_TOOLS:
             network_cmd = True
             stmt_network = True
             active_tool = basename
+            stmt_proxy_required = basename in PROXY_REQUIRED_TOOLS
             continue
         # Only interpret target/input/value flags while a network tool is the
         # active command; otherwise "-l"/"-d"/"-t" on plain commands (wc -l,
@@ -347,10 +424,10 @@ def _scan_tokens(
     flush()
     network_stmt_count = sum(1 for net, _ in stmt_summaries if net)
     info_stmt_count = sum(1 for net, info in stmt_summaries if net and info)
-    return network_cmd, host_candidates, url_candidates, network_stmt_count, info_stmt_count
+    return network_cmd, host_candidates, url_candidates, network_stmt_count, info_stmt_count, needs_proxy
 
 
-def extract(command: str) -> tuple[bool, list[str], bool]:
+def extract(command: str) -> tuple[bool, list[str], bool, bool]:
     # Scan each newline-separated statement with fresh state so a network tool
     # on one line cannot leak `active_tool` onto the next (which would misread a
     # later dotted filename like `cat out.txt` as a host). If a quoted argument
@@ -360,30 +437,31 @@ def extract(command: str) -> tuple[bool, list[str], bool]:
     try:
         for line in lines:
             if line.strip():
-                token_lists.append(shlex.split(line, posix=True))
+                token_lists.append(split_separators(shlex.split(line, posix=True)))
     except ValueError:
         try:
-            token_lists = [shlex.split(command, posix=True)]
+            token_lists = [split_separators(shlex.split(command, posix=True))]
         except ValueError as exc:
             if any(re.search(rf"\b{re.escape(tool)}\b", command) for tool in NETWORK_TOOLS):
                 raise ConfigError(f"cannot parse network command: {exc}") from exc
             urls = [clean_candidate(value) for value in URL_RE.findall(command)]
-            return False, list(dict.fromkeys(v for v in urls if v)), False
+            return False, list(dict.fromkeys(v for v in urls if v)), False, False
 
     proxy_values = loopback_proxy_values(token_lists)
-
     network_seen = False
     host_candidates: list[str] = []
     url_candidates: list[str] = []
     network_stmt_count = 0
     info_stmt_count = 0
+    needs_proxy = False
     for tokens in token_lists:
-        seen, hosts, urls, net_ct, info_ct = _scan_tokens(tokens, command)
+        seen, hosts, urls, net_ct, info_ct, statement_needs_proxy = _scan_tokens(tokens, command)
         network_seen = network_seen or seen
         host_candidates.extend(hosts)
         url_candidates.extend(urls)
         network_stmt_count += net_ct
         info_stmt_count += info_ct
+        needs_proxy = needs_proxy or statement_needs_proxy
 
     # A recognized loopback proxy is transport, not a destination: subtract one
     # URL occurrence per counted proxy use so the real target stays visible.
@@ -398,7 +476,7 @@ def extract(command: str) -> tuple[bool, list[str], bool]:
     # A command is "targetless" only if every network statement was info-only; a
     # single real egress with no verifiable target still fails closed.
     all_network_info_only = network_stmt_count > 0 and info_stmt_count == network_stmt_count
-    return network_seen, candidates, all_network_info_only
+    return network_seen, candidates, all_network_info_only, needs_proxy
 
 
 def main() -> int:
@@ -411,9 +489,15 @@ def main() -> int:
     if not command:
         return 0
     try:
-        network_seen, candidates, info_only = extract(command)
+        network_seen, candidates, info_only, needs_proxy = extract(command)
         if network_seen and not candidates and not info_only:
-            raise ConfigError("network command has no statically verifiable target; use explicit targets or an inspectable target file")
+            raise ConfigError(
+                "network command has no statically verifiable target: a shell "
+                "variable, command substitution, or loop hides the destination "
+                "from scope enforcement. Pass literal in-scope targets or an "
+                "inspectable target file (e.g. httpx -l hosts.txt, nuclei -l "
+                "hosts.txt, subfinder -dL domains.txt)."
+            )
         if not candidates:
             return 0
         yaml_path = resolve_engagement(None, root=ROOT)
@@ -422,6 +506,16 @@ def main() -> int:
             allowed, host, reason = scope_decision(config, candidate)
             if not allowed:
                 raise ConfigError(f"target {host!r} denied: {reason}")
+        # In scope, but an HTTP-egress tool would reach the target OFF-PROXY: the
+        # rate policy and required headers (X-Bug-Bounty) live in the proxy, so a
+        # direct call violates RoE even in scope. Fail closed.
+        if needs_proxy:
+            raise ConfigError(
+                "in-scope HTTP-egress tool would bypass the scope proxy: run it as "
+                "`./scripts/run_scoped_http.sh <tool> ...` so redirects, inherited "
+                "NO_PROXY, required headers, and the aggregate rate limit stay inside "
+                "the enforcement boundary."
+            )
     except ConfigError as exc:
         decision(str(exc), command)
     except Exception as exc:  # noqa: BLE001 - a scope guard must fail closed on ANY error

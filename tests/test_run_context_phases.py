@@ -73,6 +73,10 @@ class RunContextPhaseTests(unittest.TestCase):
     def test_recon_pentest_and_report_share_one_durable_identity(self) -> None:
         self.assertIn("NEW_RUN", self.run_context("recon").stdout)
         initial = self.read_run()
+        for relative in ("scan-raw", "scripts", "scratch"):
+            path = self.engagement / "state" / relative
+            self.assertTrue(path.is_dir(), relative)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o700)
 
         self.assertIn("RESUME", self.run_context("pentest").stdout)
         self.assertIn("RESUME", self.run_context("report").stdout)

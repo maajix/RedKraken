@@ -21,16 +21,29 @@ if command -v ss >/dev/null 2>&1; then
   holder="$(ss -ltnp 2>/dev/null | grep -E "127\.0\.0\.1:${PORT}\b" | head -n1 || true)"
   if [ -n "$holder" ]; then
     if printf '%s\n' "$holder" | grep -q 'mitmdump'; then
-      echo "scope proxy already listening on 127.0.0.1:$PORT; nothing to do" >&2
-      exit 0
+      if python3 "$ROOT/lib/proxy_supervisor.py" owner "$PENTEST_ENGAGEMENT_DIR" --port "$PORT" >/dev/null; then
+        echo "scope proxy already supervised on 127.0.0.1:$PORT; nothing to do" >&2
+        exit 0
+      fi
+      if python3 "$ROOT/lib/proxy_supervisor.py" stale "$PENTEST_ENGAGEMENT_DIR" --port "$PORT" >/dev/null; then
+        echo "recovering recorded proxy orphan on 127.0.0.1:$PORT" >&2
+      else
+        echo "unsupervised mitmdump holds 127.0.0.1:$PORT; refusing to replace it" >&2
+        exit 1
+      fi
+    else
+      echo "127.0.0.1:$PORT is held by a non-proxy process; refusing to start:" >&2
+      printf '  %s\n' "$holder" >&2
+      exit 1
     fi
-    echo "127.0.0.1:$PORT is held by a non-proxy process; refusing to start:" >&2
-    printf '  %s\n' "$holder" >&2
-    exit 1
   fi
 elif timeout 1 bash -c ": </dev/tcp/127.0.0.1/$PORT" 2>/dev/null; then
-  echo "something is already listening on 127.0.0.1:$PORT; assuming scope proxy is up; nothing to do" >&2
-  exit 0
+  if python3 "$ROOT/lib/proxy_supervisor.py" owner "$PENTEST_ENGAGEMENT_DIR" --port "$PORT" >/dev/null; then
+    echo "scope proxy already supervised on 127.0.0.1:$PORT; nothing to do" >&2
+    exit 0
+  fi
+  echo "unsupervised listener holds 127.0.0.1:$PORT; refusing to replace it" >&2
+  exit 1
 fi
 # Hand off to the durable supervisor (lib/proxy_supervisor.py): it owns exactly
 # one proxy per engagement+port via an flock, respawns mitmdump if it exits
@@ -38,8 +51,8 @@ fi
 # stays alive independently of THIS shell/agent. That detachment is the
 # root-cause fix: the old foreground `exec mitmdump` died whenever its launching
 # context exited, dropping scope enforcement mid-run. Liveness is checked by
-# audit recency (`proxy_supervisor.py health <engagement>`), never ps/ss, so it
-# stays correct under the future network-namespace isolation.
+# supervisor ownership (`proxy_supervisor.py health <engagement>`), with recent
+# proxy audit activity as a fallback, so idle proxies are not called dead.
 LOG="$PENTEST_ENGAGEMENT_DIR/state/scope-proxy-$PORT.log"
 mkdir -p "$(dirname "$LOG")"
 if command -v setsid >/dev/null 2>&1; then

@@ -35,6 +35,11 @@ STATUS_RANK = {
     "exploited": 4,
 }
 ARRAY_FIELDS = {"evidence", "repro", "dataflow", "references", "standards"}
+# Positional-arg values that mean "read the JSON from stdin" rather than "parse
+# this literal string as JSON". Without this, `record_finding.sh /dev/stdin <f`
+# runs json.loads("/dev/stdin") -> "Expecting value: line 1 column 1 (char 0)",
+# because a present positional arg otherwise suppresses the stdin read below.
+STDIN_ARGS = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
 
 
 class FindingError(ValueError):
@@ -239,14 +244,18 @@ def selftest() -> int:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("json", nargs="?")
+    parser.add_argument(
+        "json",
+        nargs="?",
+        help="finding as a JSON string; omit or pass '-' or '/dev/stdin' to read JSON from stdin",
+    )
     parser.add_argument("--engagement")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv[1:])
     if args.selftest:
         return selftest()
     try:
-        text = args.json if args.json is not None else sys.stdin.read()
+        text = sys.stdin.read() if args.json is None or args.json in STDIN_ARGS else args.json
         raw = json.loads(text)
         print(upsert(engagement_dir(args.engagement), raw))
         return 0

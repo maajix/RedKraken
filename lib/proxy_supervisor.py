@@ -14,10 +14,8 @@ This module supervises the proxy so it:
       budget so a proxy that cannot stay up stops thrashing and surfaces;
   (c) is guarded by a single-owner ``flock`` so exactly one supervisor runs per
       engagement+port (the lock frees automatically if the supervisor dies);
-  (d) exposes a liveness probe based on AUDIT RECENCY, never ``ps``/``ss`` --
-      under the #17 network-namespace future (and today under the command
-      sandbox) a socket/process probe goes blind to the proxy and yields
-      spurious "down" reads that trigger needless restarts.
+  (d) exposes a liveness probe based on the owner lock, with audit recency as a
+      fallback for an orphaned-but-serving proxy. It never needs ``ps``/``ss``.
 
 The OS-spawning parts are injectable so the supervision logic (lock, respawn
 budget, health probe, the loop itself) is unit-testable without real processes.
@@ -96,14 +94,41 @@ def last_proxy_activity(directory: Path, *, max_scan_bytes: int = MAX_AUDIT_SCAN
     return None
 
 
-def proxy_healthy(
-    directory: Path, *, now: float | None = None, window: float = DEFAULT_HEALTH_WINDOW
-) -> bool:
-    """True iff the proxy appended a flow event within ``window`` seconds.
+def owner_active(directory: Path, port: int) -> bool:
+    """Whether another process holds the supervisor lock, without modifying it."""
+    path = owner_lock_path(directory, port)
+    try:
+        handle = path.open("r")
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        except OSError:
+            return False
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return False
+    finally:
+        handle.close()
 
-    Passive: needs no probe request and no socket/process visibility, so it
-    stays correct inside a network namespace where ss/ps would read blind.
+
+def proxy_healthy(
+    directory: Path,
+    *,
+    port: int | None = None,
+    now: float | None = None,
+    window: float = DEFAULT_HEALTH_WINDOW,
+) -> bool:
+    """True for an active supervisor or a recent proxy flow.
+
+    The lock makes an idle proxy healthy; audit recency preserves visibility for
+    a serving mitmdump orphaned by a supervisor crash. Neither needs network or
+    process-namespace visibility.
     """
+    if port is not None and owner_active(directory, port):
+        return True
     last = last_proxy_activity(directory)
     if last is None:
         return False
@@ -222,6 +247,18 @@ def _proc_cmdline(pid: int) -> str:
     return raw.replace(b"\x00", b" ").decode("utf-8", "replace").strip()
 
 
+def stale_proxy_pid(directory: Path, port: int) -> int | None:
+    """Recorded live PID when it is still this harness's mitmdump child."""
+    try:
+        recorded = int(pid_path(directory, port).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    if recorded <= 1 or recorded == os.getpid():
+        return None
+    cmdline = _proc_cmdline(recorded)
+    return recorded if "mitmdump" in cmdline and "scope_proxy.py" in cmdline else None
+
+
 def reap_stale_proxy(directory: Path, port: int, *, sig: int = signal.SIGTERM) -> bool:
     """Best-effort terminate a proxy left by a prior, crashed supervisor.
 
@@ -231,15 +268,8 @@ def reap_stale_proxy(directory: Path, port: int, *, sig: int = signal.SIGTERM) -
     via /proc that it is still OUR mitmdump (guards against PID reuse).  Returns
     True when a stale proxy was signalled.
     """
-    pidfile = pid_path(directory, port)
-    try:
-        recorded = int(pidfile.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return False
-    if recorded <= 1 or recorded == os.getpid():
-        return False
-    cmdline = _proc_cmdline(recorded)
-    if "mitmdump" not in cmdline or "scope_proxy.py" not in cmdline:
+    recorded = stale_proxy_pid(directory, port)
+    if recorded is None:
         return False
     try:
         os.kill(recorded, sig)
@@ -354,9 +384,23 @@ def _cmd_supervise(args: argparse.Namespace) -> int:
 
 
 def _cmd_health(args: argparse.Namespace) -> int:
-    healthy = proxy_healthy(Path(args.engagement).resolve(), window=args.window)
+    healthy = proxy_healthy(
+        Path(args.engagement).resolve(), port=args.port, window=args.window
+    )
     print("healthy" if healthy else "unhealthy")
     return 0 if healthy else 1
+
+
+def _cmd_owner(args: argparse.Namespace) -> int:
+    active = owner_active(Path(args.engagement).resolve(), args.port)
+    print("supervised" if active else "unsupervised")
+    return 0 if active else 1
+
+
+def _cmd_stale(args: argparse.Namespace) -> int:
+    pid = stale_proxy_pid(Path(args.engagement).resolve(), args.port)
+    print(pid if pid is not None else "none")
+    return 0 if pid is not None else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -369,10 +413,21 @@ def main(argv: list[str] | None = None) -> int:
     supervise.add_argument("tool", nargs="?", default="")
     supervise.set_defaults(func=_cmd_supervise)
 
-    health = sub.add_parser("health", help="audit-recency liveness probe")
+    health = sub.add_parser("health", help="passive supervisor/flow liveness probe")
     health.add_argument("engagement")
+    health.add_argument("--port", type=int, default=18080)
     health.add_argument("--window", type=float, default=DEFAULT_HEALTH_WINDOW)
     health.set_defaults(func=_cmd_health)
+
+    owner = sub.add_parser("owner", help="check whether a supervisor owns the proxy")
+    owner.add_argument("engagement")
+    owner.add_argument("--port", type=int, default=18080)
+    owner.set_defaults(func=_cmd_owner)
+
+    stale = sub.add_parser("stale", help="check for a safely identifiable orphan proxy")
+    stale.add_argument("engagement")
+    stale.add_argument("--port", type=int, default=18080)
+    stale.set_defaults(func=_cmd_stale)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

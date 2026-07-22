@@ -66,6 +66,16 @@ class AuditRecencyTests(unittest.TestCase):
         self.write_events({"event": "proxy-policy", "ts": iso(500.0)})
         self.assertFalse(ps.proxy_healthy(self.directory, now=1000.0, window=120.0))
 
+    def test_idle_owned_proxy_is_healthy(self) -> None:
+        owner = ps.OwnerLock(ps.owner_lock_path(self.directory, 18080))
+        self.assertTrue(owner.acquire())
+        try:
+            self.assertTrue(ps.owner_active(self.directory, 18080))
+            self.assertTrue(ps.proxy_healthy(self.directory, port=18080, now=1000.0))
+        finally:
+            owner.release()
+        self.assertFalse(ps.owner_active(self.directory, 18080))
+
     def test_non_proxy_events_do_not_count_as_liveness(self) -> None:
         # A recent scope-block (from the PreToolUse guard) is not proxy traffic.
         self.write_events(

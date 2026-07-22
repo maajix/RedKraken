@@ -28,15 +28,17 @@ for gRPC reflection and invocation. Missing tools become explicit coverage gaps.
 5. Cap generated examples and sequence length. Apply request-rate constraints
    only when the operator explicitly set `rate_limit_enabled: true`.
 
-For bounded Schemathesis execution, run a tool-labelled enforcement proxy and use
-the harness wrapper. Mutation additionally requires `mutation_allowed: true`.
+For bounded Schemathesis execution, the orchestrator ensures the shared proxy is
+healthy and the agent uses the harness wrappers. A sub-agent halts and reports an
+unhealthy proxy; it never starts one. Mutation additionally requires
+`mutation_allowed: true`.
 Real sensitive records, discovered credentials, cross-service pivots, and
 availability effects independently require `sensitive_data_access_allowed`,
 `credential_use_allowed`, `pivoting_allowed`, and
 `availability_impact_allowed` respectively:
 ```bash
-bash scripts/start_scope_proxy.sh "$PENTEST_ENGAGEMENT_DIR" 18080 schemathesis
-PENTEST_PROXY=http://127.0.0.1:18080 bash scripts/run_schemathesis.sh \
+python3 lib/proxy_supervisor.py health "$PENTEST_ENGAGEMENT_DIR"
+./scripts/run_scoped_http.sh bash scripts/run_schemathesis.sh \
   "$PENTEST_ENGAGEMENT_DIR" "<schema>" "<in-scope-base-url>"
 ```
 The wrapper fixes seed, example cap, redirects, output location, and read-only

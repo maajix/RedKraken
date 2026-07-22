@@ -15,10 +15,11 @@ from pathlib import Path
 
 import yaml
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 from lib.harness_config import load_engagement, scope_decision
 
 
-ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "parse_intigriti.py"
 FIXTURE = ROOT / "tests" / "fixtures" / "intigriti_sample_program.json"
 TEST_USERNAME = "synthetic-researcher"

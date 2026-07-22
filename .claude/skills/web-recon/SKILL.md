@@ -41,14 +41,16 @@ recon method with `tested`, `exhausted`, `blocked`, `not-applicable`, or
 
 If `test_credentials` are provided: log in, capture the session cookie/token, and re-crawl authenticated areas (often a much larger surface). Note auth mechanism (session cookie / JWT / SAML / oAuth) — it directly seeds the `auth-session` family.
 
-For an SPA or browser-only flow, start the enforcement proxy and capture a clean
-per-role context rather than importing a personal browser profile:
+For an SPA or browser-only flow, the orchestrator first ensures the one shared
+proxy is healthy. A sub-agent never starts or restarts it; on an unhealthy result,
+halt and report. Then capture a clean per-role context:
 ```bash
-bash scripts/start_scope_proxy.sh "$PENTEST_ENGAGEMENT_DIR" 18080 playwright
-bash scripts/browser_capture.sh "$PENTEST_ENGAGEMENT_DIR" "<in-scope-url>" "<role>" --proxy http://127.0.0.1:18080
+python3 lib/proxy_supervisor.py health "$PENTEST_ENGAGEMENT_DIR"
+./scripts/run_scoped_http.sh bash scripts/browser_capture.sh \
+  "$PENTEST_ENGAGEMENT_DIR" "<in-scope-url>" "<role>" --proxy http://127.0.0.1:18080
 ```
-Run the proxy in a separate terminal/process. Its per-request scope and optional
-rate policy are stronger than the CLI hook.
+The proxy's per-request scope and optional rate policy are stronger than the CLI
+hook.
 
 ## Output schemas (write with `jq`/python, keep valid)
 

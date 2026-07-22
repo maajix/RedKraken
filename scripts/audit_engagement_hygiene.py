@@ -169,6 +169,10 @@ def _row(root: Path, path: Path, references: set[str], expired: bool, deletion_b
             class_name, reason, action = "D", "expired unreferenced synthetic credential", "delete"
         else:
             class_name, reason, action = "B", "credential-like content or filename", "rotate-then-delete"
+    elif relative.startswith("state/scratch/"):
+        class_name, reason, action = "D", "unreferenced disposable scratch artifact", "delete"
+    elif relative.startswith("state/scripts/"):
+        class_name, reason, action = "D", "engagement helper; review for reuse or archive", "review-for-promotion"
     elif relative.startswith("state/"):
         class_name, reason, action = "D", "unreferenced state artifact; retention review required", "archive"
     else:

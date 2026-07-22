@@ -30,5 +30,5 @@ Feed requests into `state/endpoints.json` and multi-step flows into
 
 Use `scripts/browser_capture.sh`, never a personal profile. It requires the scope
 proxy and writes trace, HAR, screenshot, storage state, event metadata, and hashes
-under `evidence/browser/`. Start the proxy with tool name `playwright` so an
-explicit per-tool rate policy can be selected.
+under `evidence/browser/`. The orchestrator starts the shared proxy; sub-agents
+check `proxy_supervisor.py health`, halt if unhealthy, and never restart it.

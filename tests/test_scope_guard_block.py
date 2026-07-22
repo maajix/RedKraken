@@ -55,7 +55,8 @@ def blocked_events(events: list[dict]) -> list[dict]:
 
 # (name, command, engagement, expect_block)
 CASES = [
-    ("in-scope host allowed", "curl https://app.example.com/", GOOD_ENGAGEMENT, False),
+    ("in-scope host allowed through reviewed runner",
+     "./scripts/run_scoped_http.sh curl https://app.example.com/", GOOD_ENGAGEMENT, False),
     ("out-of-scope host blocked (not in targets)", "curl https://evil.other.org/x", GOOD_ENGAGEMENT, True),
     ("explicit out_of_scope blocked (deny before allow)", "curl https://secret.example.com/", GOOD_ENGAGEMENT, True),
     ("network tool with no verifiable target blocked", "curl", GOOD_ENGAGEMENT, True),
@@ -70,8 +71,10 @@ CASES = [
     # ...but a transparent prefix (sudo/timeout/env/...) still runs the following
     # command, so a real in-scope invocation is allowed and the fail-closed target
     # rules still apply to it.
-    ("sudo-prefixed in-scope invocation allowed", "sudo curl https://app.example.com/", GOOD_ENGAGEMENT, False),
-    ("timeout-prefixed in-scope invocation allowed", "timeout 300 nuclei -u https://app.example.com/", GOOD_ENGAGEMENT, False),
+    ("sudo-prefixed in-scope invocation allowed",
+     "sudo ./scripts/run_scoped_http.sh curl https://app.example.com/", GOOD_ENGAGEMENT, False),
+    ("timeout-prefixed in-scope invocation allowed",
+     "timeout 300 ./scripts/run_scoped_http.sh nuclei -u https://app.example.com/", GOOD_ENGAGEMENT, False),
     ("env-prefixed out-of-scope invocation blocked", "env FOO=bar curl https://evil.other.org/x", GOOD_ENGAGEMENT, True),
     # A recognized network command whose only target is a shell variable is opaque
     # to static analysis -> fail closed (targetless block), prefix or not.
@@ -88,25 +91,28 @@ CASES = [
      "command -v curl >/dev/null && curl https://evil.other.org/", GOOD_ENGAGEMENT, True),
     ("command-prefixed out-of-scope real exec still blocked",
      "command curl https://evil.other.org/", GOOD_ENGAGEMENT, True),
-    # Loopback scope-proxy endpoints are transport, not targets. These mirror
-    # direct CLI and documented wrapper invocations while preserving fail-closed
-    # checks for the actual destination and for arbitrary proxies.
-    ("in-scope curl through loopback proxy allowed",
+    # Manual proxy wiring is not sufficient: NO_PROXY can override -x and curl
+    # ignores uppercase HTTP_PROXY after an HTTPS->HTTP redirect. Only the reviewed
+    # runner clears those bypasses and counts as mandatory transport.
+    ("manual loopback proxy flag blocked",
      "curl --proxy http://127.0.0.1:18080 https://app.example.com/",
-     GOOD_ENGAGEMENT, False),
-    ("inline loopback proxy env allowed",
+     GOOD_ENGAGEMENT, True),
+    ("inline loopback proxy env blocked",
      "HTTPS_PROXY=http://127.0.0.1:18080 curl https://app.example.com/",
+     GOOD_ENGAGEMENT, True),
+    ("reviewed runner allows redirect-safe curl",
+     "./scripts/run_scoped_http.sh curl -L https://app.example.com/",
      GOOD_ENGAGEMENT, False),
     ("documented browser wrapper through loopback proxy allowed",
-     "bash scripts/browser_capture.sh engagements/acme https://app.example.com owner "
+     "./scripts/run_scoped_http.sh bash scripts/browser_capture.sh engagements/acme https://app.example.com owner "
      "--proxy http://127.0.0.1:18080",
      GOOD_ENGAGEMENT, False),
     ("documented schemathesis wrapper through loopback proxy allowed",
-     "PENTEST_PROXY=http://127.0.0.1:18080 bash scripts/run_schemathesis.sh "
+     "./scripts/run_scoped_http.sh bash scripts/run_schemathesis.sh "
      "engagements/acme ./openapi.yaml https://api.example.com",
      GOOD_ENGAGEMENT, False),
-    ("out-of-scope target through loopback proxy blocked",
-     "curl --proxy http://127.0.0.1:18080 https://evil.other.org/",
+    ("out-of-scope target through reviewed runner blocked",
+     "./scripts/run_scoped_http.sh curl https://evil.other.org/",
      GOOD_ENGAGEMENT, True),
     ("direct loopback target remains blocked",
      "curl http://127.0.0.1:18080/", GOOD_ENGAGEMENT, True),
