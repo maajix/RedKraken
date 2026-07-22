@@ -11,6 +11,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 from chain_store import ChainState, ChainStateError
 from challenge_store import LENSES as CHALLENGE_LENSES, ChallengeState, ChallengeStateError
+from finding_store import load_rows as load_findings
+from finding_store import normalize as normalize_finding
+from finding_store import upsert as upsert_finding
 from harness_config import engagement_yaml, load_engagement, scope_decision
 from lead_store import LeadState
 from surface_store import SurfaceState
@@ -95,6 +98,101 @@ class CampaignCoordinator:
         self.surface = SurfaceState(self.engagement)
         self.chain = ChainState(self.engagement)
         self.challenge = ChallengeState(self.engagement)
+
+    def _findings(self) -> list[dict[str, Any]]:
+        rows = load_findings(self.engagement / "state" / "findings.jsonl")
+        return sorted((normalize_finding(row) for row in rows), key=lambda row: row["id"])
+
+    @staticmethod
+    def _finding_view(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Structured, non-secret finding facts used for scheduling and challenge review."""
+
+        fields = (
+            "id",
+            "title",
+            "technique",
+            "family",
+            "severity",
+            "status",
+            "summary",
+            "description",
+            "impact",
+            "evidence",
+            "endpoint",
+            "target_link",
+            "method",
+            "param",
+            "component",
+            "file",
+            "chain",
+        )
+        return [
+            {field: finding[field] for field in fields if field in finding}
+            for finding in findings
+        ]
+
+    def _sync_findings(self, findings: list[dict[str, Any]]) -> None:
+        """Make recorded findings durable chain-review inputs without duplicate writes."""
+
+        if not findings:
+            return
+        config = load_engagement(engagement_yaml(self.engagement))
+        existing = {
+            node["source_id"]: node for node in self.chain.snapshot()["nodes"]
+        }
+        demonstrated = {"confirmed", "exploited", "exploitable-not-detonated"}
+        for finding in findings:
+            if finding.get("source") == "campaign-chain":
+                continue
+            asset = finding.get("endpoint") or finding.get("target_link")
+            if not isinstance(asset, str) or not asset.strip():
+                continue
+            allowed, _asset, _reason = scope_decision(config, asset)
+            if not allowed:
+                continue
+            prior = existing.get(finding["id"])
+            metadata = finding.get("chain")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            prior_provides = prior["provides"] if prior else []
+            prior_requires = prior["requires"] if prior else []
+            prior_safety = prior["safety_requirements"] if prior else []
+            node = {
+                "source_id": finding["id"],
+                "asset": asset.strip(),
+                "title": str(finding.get("title") or finding["summary"]).strip(),
+                "provides": list(
+                    dict.fromkeys([*prior_provides, *metadata.get("provides", [])])
+                ),
+                "requires": list(
+                    dict.fromkeys([*prior_requires, *metadata.get("requires", [])])
+                ),
+                "severity": finding["severity"],
+                "authorized": (prior["authorized"] if prior else True)
+                and metadata.get("authorized", True),
+                "status": (
+                    "demonstrated"
+                    if finding["status"] in demonstrated
+                    else "observed"
+                ),
+                "evidence": list(
+                    dict.fromkeys(
+                        [
+                            *finding.get("evidence", []),
+                            *(prior["evidence"] if prior else []),
+                        ]
+                    )
+                ),
+                "safety_requirements": list(
+                    dict.fromkeys(
+                        [*prior_safety, *metadata.get("safety_requirements", [])]
+                    )
+                ),
+            }
+            if prior is not None and all(prior.get(key) == value for key, value in node.items()):
+                continue
+            stored = self.chain.observe(node)["node"]
+            existing[finding["id"]] = stored
 
     @staticmethod
     def _completion(
@@ -466,7 +564,12 @@ class CampaignCoordinator:
             if result["scheduled"]:
                 self.chain.mark_material()
             return {"schema_version": 1, "type": event["type"], "result": result}
-        if event["type"] in {"chain.observe", "chain.certify", "chain.validate"}:
+        if event["type"] in {
+            "chain.observe",
+            "chain.certify",
+            "chain.validate",
+            "chain.reject",
+        }:
             return {
                 "schema_version": 1,
                 "type": event["type"],
@@ -506,21 +609,50 @@ class CampaignCoordinator:
                 if payload:
                     raise CampaignEventError("chain.certify payload must be empty")
                 return {"accepted": True, **self.chain.certify()}
+            if kind == "chain.reject":
+                if set(payload) != {"assignment_id", "evidence", "reason"}:
+                    raise CampaignEventError(
+                        "chain.reject payload must contain assignment_id, evidence, and reason"
+                    )
+                assignment = self.chain.reject(
+                    payload.get("assignment_id", ""),
+                    payload.get("evidence", []),
+                    payload.get("reason", ""),
+                )
+                return {"accepted": True, "assignment": assignment}
             if set(payload) - {"assignment_id", "severity", "evidence", "title"}:
                 raise CampaignEventError("chain.validate payload fields are invalid")
-            finding = self.chain.validate(
+            chain_finding = self.chain.validate(
                 payload.get("assignment_id", ""),
                 payload.get("severity", "info"),
                 payload.get("evidence", []),
                 payload.get("title", ""),
             )
-            return {"accepted": True, "finding": finding}
+            finding = {
+                **chain_finding,
+                "technique": "Multi-step exploit chain",
+                "family": "kill-chain",
+                "status": "exploited",
+                "summary": chain_finding["title"],
+                "component": chain_finding["assignment_id"],
+                "source": "campaign-chain",
+                "impact": f"Combined path demonstrated: {chain_finding['title']}",
+                "remediation": (
+                    "Remediate each component and prevent the recorded capability "
+                    "from satisfying the downstream prerequisite."
+                ),
+            }
+            stored = upsert_finding(self.engagement, finding)
+            return {"accepted": True, "finding": normalize_finding(finding), "stored": stored}
         except ChainStateError as exc:
             raise CampaignEventError(str(exc)) from exc
 
     @staticmethod
     def _material_view(
-        state: dict[str, Any], surface: dict[str, Any]
+        state: dict[str, Any],
+        surface: dict[str, Any],
+        findings: list[dict[str, Any]],
+        chain: dict[str, Any],
     ) -> dict[str, Any]:
         """The read-only campaign digest every explorer lens reasons over."""
         return {
@@ -535,22 +667,83 @@ class CampaignCoordinator:
                         "parameter": lead["parameter"],
                         "status": lead["status"],
                         "priority": lead["priority"],
+                        "hypothesis": lead["hypothesis"],
+                        "provenance": lead["provenance"],
+                        "evidence": lead["evidence"],
+                        "parent_leads": lead["parent_leads"],
+                        "parent_findings": lead["parent_findings"],
+                        "safety_requirements": lead["safety_requirements"],
                     }
                     for lead in state["leads"]
                 ),
                 key=lambda entry: entry["id"],
             ),
             "coverage": sorted(
-                ({"key": entry["key"], "status": entry["status"]} for entry in state["coverage"]),
+                (
+                    {
+                        "id": entry["id"],
+                        "dimension": entry["dimension"],
+                        "key": entry["key"],
+                        "status": entry["status"],
+                        "reason": entry["reason"],
+                    }
+                    for entry in state["coverage"]
+                ),
                 key=lambda entry: entry["key"],
             ),
             "surface": sorted(
                 (
-                    {"id": item["id"], "kind": item["kind"], "value": item["value"]}
+                    {
+                        "id": item["id"],
+                        "kind": item["kind"],
+                        "value": item["value"],
+                        "parent": item["parent"],
+                        "attributes": item["attributes"],
+                        "sources": item["sources"],
+                    }
                     for item in surface["observations"]
                 ),
                 key=lambda entry: entry["id"],
             ),
+            "findings": CampaignCoordinator._finding_view(findings),
+            "chain": {
+                "nodes": [
+                    {
+                        key: node[key]
+                        for key in (
+                            "source_id",
+                            "asset",
+                            "title",
+                            "provides",
+                            "requires",
+                            "severity",
+                            "authorized",
+                            "status",
+                            "evidence",
+                            "safety_requirements",
+                        )
+                    }
+                    for node in chain["nodes"]
+                ],
+                "assignments": [
+                    {
+                        key: assignment.get(key, "")
+                        for key in (
+                            "id",
+                            "provider",
+                            "consumer",
+                            "token",
+                            "status",
+                            "severity",
+                            "required_evidence",
+                            "safety_requirements",
+                            "evidence",
+                            "reason",
+                        )
+                    }
+                    for assignment in chain["assignments"]
+                ],
+            },
         }
 
     @staticmethod
@@ -559,8 +752,14 @@ class CampaignCoordinator:
             json.dumps(view, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
 
-    def _material_digest(self, state: dict[str, Any], surface: dict[str, Any]) -> str:
-        return self._digest(self._material_view(state, surface))
+    def _material_digest(
+        self,
+        state: dict[str, Any],
+        surface: dict[str, Any],
+        findings: list[dict[str, Any]],
+        chain: dict[str, Any],
+    ) -> str:
+        return self._digest(self._material_view(state, surface, findings, chain))
 
     def _apply_challenge(self, kind: str, payload: Any) -> dict[str, Any]:
         try:
@@ -577,7 +776,16 @@ class CampaignCoordinator:
         self._seed_required_coverage()
         inspection = self.store.inspect()
         completion = self._completion(inspection["can_stop"], inspection["state"])
-        view = self._material_view(inspection["state"], self.surface.snapshot())
+        findings = self._findings()
+        self._sync_findings(findings)
+        if completion["outcome"] != "converged":
+            raise CampaignEventError("challenge.open requires converged campaign work")
+        if self.chain.snapshot()["review_pending"]:
+            raise CampaignEventError("challenge.open requires a certified chain review")
+        chain = self.chain.snapshot()
+        view = self._material_view(
+            inspection["state"], self.surface.snapshot(), findings, chain
+        )
         digest = self._digest(view)
         opened = self.challenge.open(digest)
         return {
@@ -602,6 +810,15 @@ class CampaignCoordinator:
         if opened["status"] != "open":
             raise CampaignEventError("no open convergence challenge to answer")
         digest = opened["digest"]
+        inspection = self.store.inspect()
+        current_digest = self._material_digest(
+            inspection["state"],
+            self.surface.snapshot(),
+            self._findings(),
+            self.chain.snapshot(),
+        )
+        if current_digest != digest:
+            raise CampaignEventError("campaign material changed; open a fresh challenge")
         context = self._gate_context()
         accepted: list[dict[str, str]] = []
         rejected: list[dict[str, str]] = []
@@ -636,6 +853,7 @@ class CampaignCoordinator:
         support = set(leads_by_id)
         support.update(entry["key"] for entry in state["coverage"])
         support.update(item["id"] for item in self.surface.snapshot()["observations"])
+        support.update(finding["id"] for finding in self._findings())
         return {
             "config": config,
             "leads_by_id": leads_by_id,
@@ -736,15 +954,167 @@ class CampaignCoordinator:
         }
         return "accept", lead_raw
 
+    def _next_action(
+        self,
+        completion: dict[str, Any],
+        state: dict[str, Any],
+        next_work: dict[str, Any] | None,
+        findings: list[dict[str, Any]],
+        chain_snapshot: dict[str, Any],
+        challenge_snapshot: dict[str, Any],
+        material_digest: str,
+        material: dict[str, Any],
+        reporting_permitted: bool,
+    ) -> dict[str, Any]:
+        """Return one deterministic action so the model never invents phase order."""
+
+        outcome = completion["outcome"]
+        if reporting_permitted:
+            return {
+                "kind": "report" if outcome == "converged" else "report-terminal",
+                "reason": outcome,
+            }
+
+        leased = sorted(
+            (
+                {
+                    "lead_id": lead["id"],
+                    "worker_id": lead["lease_owner"],
+                    "lease_until": lead["lease_until"],
+                }
+                for lead in state["leads"]
+                if lead["status"] == "leased"
+            ),
+            key=lambda lease: lease["lead_id"],
+        )
+        if leased:
+            return {
+                "kind": "await-leases",
+                "leases": leased,
+                "reason": "dispatched work is still durably leased",
+            }
+
+        candidates = sorted(
+            (
+                assignment
+                for assignment in chain_snapshot["assignments"]
+                if assignment["status"] == "candidate"
+            ),
+            key=lambda assignment: assignment["id"],
+        )
+        if candidates:
+            return {
+                "kind": "validate-chain",
+                "agent": "exploit-agent",
+                "assignment": candidates[0],
+                "result_events": ["chain.validate", "chain.reject"],
+                "reason": "a demonstrated capability satisfies an untested prerequisite",
+            }
+
+        severity_order = {
+            "critical": 0,
+            "high": 1,
+            "medium": 2,
+            "low": 3,
+            "info": 4,
+        }
+        confirmed = sorted(
+            (
+                finding
+                for finding in findings
+                if finding["status"] == "confirmed"
+                and (finding.get("endpoint") or finding.get("target_link"))
+                and finding.get("source") != "campaign-chain"
+            ),
+            key=lambda finding: (
+                severity_order[finding["severity"]],
+                finding["id"],
+            ),
+        )
+        if confirmed:
+            return {
+                "kind": "exploit-finding",
+                "agent": "exploit-agent",
+                "finding_id": confirmed[0]["id"],
+                "finding": self._finding_view([confirmed[0]])[0],
+                "reason": "confirmed live finding has not reached a terminal impact status",
+            }
+
+        if next_work is not None:
+            if next_work["kind"] == "discovery" or next_work["family"] == "surface-inventory":
+                agent = "recon-agent"
+            elif next_work["kind"] == "bypass":
+                agent = "bypass-specialist"
+            else:
+                agent = "web-vuln-hunter"
+            return {
+                "kind": "dispatch-lead",
+                "agent": agent,
+                "lead_id": next_work["id"],
+                "lead": next_work,
+                "worker_id": f"campaign-{next_work['id']}",
+                "lease_required": agent != "recon-agent",
+                "reason": "highest-priority eligible durable lead",
+            }
+
+        if chain_snapshot["review_pending"]:
+            return {
+                "kind": "review-chain",
+                "finding_ids": [finding["id"] for finding in findings],
+                "findings": self._finding_view(findings),
+                "chain": chain_snapshot,
+                "result_events": ["chain.observe", "chain.certify"],
+                "reason": "material campaign state changed since the last chain review",
+            }
+
+        if outcome == "converged":
+            if (
+                challenge_snapshot["status"] == "open"
+                and challenge_snapshot["digest"] == material_digest
+            ):
+                pending = [
+                    lens
+                    for lens in CHALLENGE_LENSES
+                    if challenge_snapshot["lenses"].get(lens) == "pending"
+                ]
+                if pending:
+                    return {
+                        "kind": "challenge-lens",
+                        "agent": pending[0],
+                        "lens": pending[0],
+                        "digest": material_digest,
+                        "material": material,
+                        "reason": "independent convergence lens is pending",
+                    }
+            return {
+                "kind": "open-challenge",
+                "event": {
+                    "schema_version": 1,
+                    "type": "challenge.open",
+                    "payload": {},
+                },
+                "reason": "coverage converged but the current digest is not challenge-certified",
+            }
+
+        return {
+            "kind": "operator-input",
+            "reason": ",".join(completion["reasons"]),
+        }
+
     def _reporting_permitted(
         self,
         completion: dict[str, Any],
+        state: dict[str, Any],
         chain_snapshot: dict[str, Any],
         challenge_snapshot: dict[str, Any],
         material_digest: str,
     ) -> bool:
         """The single terminal gate: coverage, work, leases, bypass, chain, and
         challenge are all terminal for the *current* material digest."""
+        if any(lead["status"] == "leased" for lead in state["leads"]):
+            return False
+        if completion["outcome"] in {"budget_exhausted", "operator_blocked"}:
+            return True
         return (
             completion["outcome"] == "converged"
             and not chain_snapshot["review_pending"]
@@ -757,21 +1127,49 @@ class CampaignCoordinator:
         campaign scheduling state, so a report render cannot advance the campaign."""
         inspection = self.store.inspect()
         completion = self._completion(inspection["can_stop"], inspection["state"])
+        next_work = (
+            inspection["next_work"]
+            if completion["outcome"] == "incomplete"
+            else None
+        )
         surface_snapshot = self.surface.snapshot()
         chain_snapshot = self.chain.snapshot()
         challenge_snapshot = self.challenge.snapshot()
-        material_digest = self._material_digest(inspection["state"], surface_snapshot)
+        findings = self._findings()
+        material = self._material_view(
+            inspection["state"], surface_snapshot, findings, chain_snapshot
+        )
+        material_digest = self._digest(material)
+        reporting_permitted = self._reporting_permitted(
+            completion,
+            inspection["state"],
+            chain_snapshot,
+            challenge_snapshot,
+            material_digest,
+        )
         return {
             "completion": completion,
+            "findings": self._finding_view(findings),
             "chain": chain_snapshot,
             "challenge": challenge_snapshot,
             "material_digest": material_digest,
-            "reporting_permitted": self._reporting_permitted(
-                completion, chain_snapshot, challenge_snapshot, material_digest
+            "reporting_permitted": reporting_permitted,
+            "next_action": self._next_action(
+                completion,
+                inspection["state"],
+                next_work,
+                findings,
+                chain_snapshot,
+                challenge_snapshot,
+                material_digest,
+                material,
+                reporting_permitted,
             ),
         }
 
     def respond(self, event: Any = None) -> dict[str, Any]:
+        findings = self._findings()
+        self._sync_findings(findings)
         event_result = self._apply(event) if event is not None else None
         self._seed_required_coverage()
         inspection = self.store.inspect()
@@ -784,9 +1182,17 @@ class CampaignCoordinator:
         surface_snapshot = self.surface.snapshot()
         chain_snapshot = self.chain.snapshot()
         challenge_snapshot = self.challenge.snapshot()
-        material_digest = self._material_digest(inspection["state"], surface_snapshot)
+        findings = self._findings()
+        material = self._material_view(
+            inspection["state"], surface_snapshot, findings, chain_snapshot
+        )
+        material_digest = self._digest(material)
         reporting_permitted = self._reporting_permitted(
-            completion, chain_snapshot, challenge_snapshot, material_digest
+            completion,
+            inspection["state"],
+            chain_snapshot,
+            challenge_snapshot,
+            material_digest,
         )
         return {
             "schema_version": 1,
@@ -795,8 +1201,20 @@ class CampaignCoordinator:
             "next_work": next_work,
             "completion": completion,
             "surface": surface_snapshot,
+            "findings": self._finding_view(findings),
             "chain": chain_snapshot,
             "challenge": challenge_snapshot,
             "material_digest": material_digest,
             "reporting_permitted": reporting_permitted,
+            "next_action": self._next_action(
+                completion,
+                inspection["state"],
+                next_work,
+                findings,
+                chain_snapshot,
+                challenge_snapshot,
+                material_digest,
+                material,
+                reporting_permitted,
+            ),
         }

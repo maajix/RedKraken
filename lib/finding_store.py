@@ -97,6 +97,22 @@ def normalize(raw: Any) -> dict[str, Any]:
         raise FindingError("source must be a non-empty string")
     for field in ARRAY_FIELDS:
         finding[field] = _strings(finding.get(field), field)
+    if "chain" in finding:
+        chain = finding["chain"]
+        allowed = {"provides", "requires", "authorized", "safety_requirements"}
+        if not isinstance(chain, dict) or set(chain) - allowed:
+            raise FindingError("chain fields must be provides, requires, authorized, and safety_requirements")
+        normalized_chain: dict[str, Any] = {}
+        for field in ("provides", "requires", "safety_requirements"):
+            values = _strings(chain.get(field), f"chain.{field}")
+            if any(not item.strip() or len(item) > 256 for item in values):
+                raise FindingError(f"chain.{field} entries must be 1 through 256 characters")
+            normalized_chain[field] = list(dict.fromkeys(item.strip() for item in values))
+        authorized = chain.get("authorized", True)
+        if not isinstance(authorized, bool):
+            raise FindingError("chain.authorized must be a boolean")
+        normalized_chain["authorized"] = authorized
+        finding["chain"] = normalized_chain
     finding.setdefault("impact", "")
     finding.setdefault("remediation", "")
     finding.setdefault("ts", now())

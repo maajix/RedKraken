@@ -49,6 +49,9 @@ library.
 - **Evidence-backed findings.** Confirmed findings require evidence; exploited
   findings require concrete impact. Reporting is a deterministic render of
   `findings.jsonl`, not free-form narrative.
+- **One deterministic next action.** The full-campaign coordinator schedules
+  leases, findings, kill-chain checks, convergence lenses, and reporting through
+  one `next_action`, so agent models do not reconstruct phase logic from prose.
 - **Two loops, one harness.** Black-box web pentesting (`/pentest`) and
   whitebox source-code auditing (`/audit`) share the same scope, evidence, and
   reporting machinery, and can cross-inform each other when both a source path
@@ -118,6 +121,8 @@ the others.
 - `state/lead-state.json`: locked, atomic lead queue, coverage ledger, leases,
   budgets, and convergence state for resumable autonomous loops.
 - `state/findings.jsonl`: schema-validated, locked, atomic finding upserts.
+- `state/chain-state.json`: evidence-grounded capability/prerequisite edges and
+  their positive or negative validation state.
 - `audit.jsonl`: redacted hash-chained command/result/proxy-policy audit events.
 - `state/scan-raw/`: scanner output and deterministic seeds/replay material.
 - `state/scripts/`: reusable, offline helpers specific to this engagement.

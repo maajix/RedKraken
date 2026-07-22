@@ -161,11 +161,15 @@ class ChainState:
     def _material_signature(node: dict[str, Any]) -> tuple[Any, ...]:
         return (
             node["source_id"],
+            node["asset"],
+            node["title"],
             tuple(sorted(node["provides"])),
             tuple(sorted(node["requires"])),
             node["severity"],
             node["authorized"],
             node["status"],
+            tuple(node["evidence"]),
+            tuple(node["safety_requirements"]),
         )
 
     @classmethod
@@ -212,24 +216,37 @@ class ChainState:
                         "severity": provisional,
                         "status": "blocked" if not consumer["authorized"] else "candidate",
                         "evidence": [],
+                        "reason": "",
                     }
-                    if prior is not None and prior["status"] == "validated":
-                        assignment["status"] = "validated"
+                    if prior is not None and prior["status"] in {
+                        "validated",
+                        "not-demonstrated",
+                    }:
+                        assignment["status"] = prior["status"]
                         assignment["severity"] = prior["severity"]
                         assignment["evidence"] = prior["evidence"]
                         assignment["title"] = prior["title"]
+                        assignment["reason"] = prior.get("reason", "")
                     elif prior is not None and prior["status"] == "blocked" and consumer["authorized"]:
                         assignment["status"] = "candidate"
                     rebuilt.append(assignment)
-        # Bound the candidate count deterministically; validated edges always survive.
-        validated = [item for item in rebuilt if item["status"] == "validated"]
+        # Bound unresolved work deterministically; reviewed edges always survive.
+        reviewed = [
+            item
+            for item in rebuilt
+            if item["status"] in {"validated", "not-demonstrated"}
+        ]
         others = sorted(
-            (item for item in rebuilt if item["status"] != "validated"),
+            (
+                item
+                for item in rebuilt
+                if item["status"] not in {"validated", "not-demonstrated"}
+            ),
             key=lambda item: (-SEVERITIES.index(item["severity"]), item["id"]),
         )
-        budget = max(0, MAX_ASSIGNMENTS - len(validated))
+        budget = max(0, MAX_ASSIGNMENTS - len(reviewed))
         state["assignments"] = sorted(
-            [*validated, *others[:budget]], key=lambda item: item["id"]
+            [*reviewed, *others[:budget]], key=lambda item: item["id"]
         )
         _ = by_source  # nodes are the authoritative component findings; never rewritten
 
@@ -311,12 +328,53 @@ class ChainState:
         """Certify the current material revision without altering it."""
 
         def operation(state: dict[str, Any]) -> dict[str, Any]:
+            unresolved = [
+                item["id"]
+                for item in state["assignments"]
+                if item["status"] == "candidate"
+            ]
+            if unresolved:
+                raise ChainStateError(
+                    "resolve candidate chain assignments before certification: "
+                    + ", ".join(unresolved)
+                )
             state["review"] = {
                 "status": "certified",
                 "certified_revision": state["material_revision"],
                 "certified_at": self._now(),
             }
             return {"review": state["review"], "review_pending": False}
+
+        return self._mutate(operation)
+
+    def reject(
+        self, assignment_id: str, evidence: list[str] | None = None, reason: str = ""
+    ) -> dict[str, Any]:
+        """Close a tested candidate whose prerequisite did not produce a chain."""
+
+        merged = self._string_list(evidence or [], "evidence")
+        if not merged:
+            raise ChainStateError("a rejected chain candidate requires negative evidence")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ChainStateError("a rejected chain candidate requires a reason")
+
+        def operation(state: dict[str, Any]) -> dict[str, Any]:
+            assignment = next(
+                (item for item in state["assignments"] if item["id"] == assignment_id),
+                None,
+            )
+            if assignment is None:
+                raise ChainStateError(f"unknown chain assignment: {assignment_id}")
+            if assignment["status"] == "blocked":
+                raise ChainStateError("a false authorization gate already blocks this chain edge")
+            if assignment["status"] == "validated":
+                raise ChainStateError("a validated chain edge cannot be rejected")
+            assignment["status"] = "not-demonstrated"
+            assignment["evidence"] = _ordered_union(assignment["evidence"], merged)
+            assignment["reason"] = reason.strip()
+            state["material_revision"] += 1
+            state["review"]["status"] = "stale"
+            return assignment
 
         return self._mutate(operation)
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Deterministic completion guard for autonomous pentest loops.
 
-The hook reasons only over the durable lead-state contract.  It never prints
-lead content, paths, parser errors, or engagement data.  Invalid/missing state
-is non-blocking so a damaged hook cannot trap Claude in an endless Stop loop.
+The hook reasons over the durable lead-state contract and, for `/full-pentest`,
+the coordinator's final report gate. It never prints lead content, paths, parser
+errors, or engagement data. Invalid/missing state is non-blocking so a damaged
+hook cannot trap Claude in an endless Stop loop.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ MAX_INPUT_BYTES = 64 * 1024
 MAX_POINTER_BYTES = 4096
 MAX_STATE_BYTES = 4 * 1024 * 1024
 MAX_OWNER_BYTES = 4096
+MAX_RUN_BYTES = 1024 * 1024
 OWNER_MARKER_NAME = "completion-guard-owner.json"
 TARGET_SUBAGENTS = {
     "recon-agent",
@@ -177,9 +179,26 @@ def _can_stop(engagement: Path) -> dict[str, Any] | None:
         ):
             return None
         sys.path.insert(0, str(ROOT / "lib"))
-        from lead_store import LeadState  # type: ignore[import-not-found]
+        run_path = engagement / "state" / "run.json"
+        full_pentest = False
+        if run_path.is_file() and 0 < run_path.stat().st_size <= MAX_RUN_BYTES:
+            run = json.loads(run_path.read_text(encoding="utf-8"))
+            full_pentest = (
+                isinstance(run, dict) and run.get("current_phase") == "full-pentest"
+            )
+        if full_pentest:
+            from campaign_coordinator import CampaignCoordinator  # type: ignore[import-not-found]
 
-        result = LeadState(engagement).can_stop()
+            outcome = CampaignCoordinator(engagement).outcome()
+            completion = outcome.get("completion") or {}
+            result = {
+                "allowed": outcome.get("reporting_permitted") is True,
+                "actionable": completion.get("actionable", 0),
+            }
+        else:
+            from lead_store import LeadState  # type: ignore[import-not-found]
+
+            result = LeadState(engagement).can_stop()
     except (ImportError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return None
     return result if isinstance(result, dict) else None

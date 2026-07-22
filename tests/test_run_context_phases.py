@@ -131,6 +131,11 @@ class RunContextPhaseTests(unittest.TestCase):
             run_context.identity_payload(yaml_path, config)["context_sha256"],
         )
 
+    def test_full_pentest_has_a_distinct_guardable_phase(self) -> None:
+        self.assertIn("NEW_RUN", self.run_context("full-pentest").stdout)
+        self.assertEqual(self.read_run()["current_phase"], "full-pentest")
+        self.assertIn("RESUME", self.run_context("report").stdout)
+
     def test_scope_change_still_fails_closed_across_phase_transition(self) -> None:
         self.run_context("recon")
         before = self.read_run()

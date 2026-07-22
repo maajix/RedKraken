@@ -130,7 +130,7 @@ def record_phase(payload: dict[str, Any], phase: str) -> None:
 def validate_mode(config: dict[str, Any], mode: str) -> None:
     if not str(config.get("intent") or "").strip():
         raise ConfigError("intent is required")
-    if mode in {"pentest", "recon"} and not config.get("targets"):
+    if mode in {"pentest", "full-pentest", "recon"} and not config.get("targets"):
         raise ConfigError(f"targets are required for {mode}")
     if mode == "audit" and not str(config.get("source_path") or "").strip():
         raise ConfigError("source_path is required for audit")
@@ -139,7 +139,11 @@ def validate_mode(config: dict[str, Any], mode: str) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("engagement")
-    parser.add_argument("--mode", choices=("pentest", "recon", "audit", "report"), required=True)
+    parser.add_argument(
+        "--mode",
+        choices=("pentest", "full-pentest", "recon", "audit", "report"),
+        required=True,
+    )
     args = parser.parse_args(argv[1:])
     try:
         yaml_path = engagement_yaml(args.engagement)

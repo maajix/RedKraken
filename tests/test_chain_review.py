@@ -21,6 +21,7 @@ COORDINATOR = ROOT / "scripts" / "campaign_coordinator.py"
 sys.path.insert(0, str(ROOT / "lib"))
 
 from chain_store import ChainState, ChainStateError, MAX_ASSIGNMENTS  # noqa: E402
+from finding_store import load_rows, upsert  # noqa: E402
 
 
 class ChainStoreDirectTests(unittest.TestCase):
@@ -165,6 +166,23 @@ class ChainStoreDirectTests(unittest.TestCase):
         self.chain.certify()
         self.assertEqual(self.chain.snapshot()["material_revision"], before)
 
+    def test_candidate_requires_a_positive_or_negative_resolution_before_certify(self) -> None:
+        self.chain.observe(
+            self._node(source_id="F-provider", provides=["session:admin"], status="demonstrated")
+        )
+        self.chain.observe(
+            self._node(source_id="F-consumer", requires=["session:admin"])
+        )
+        assignment = self.chain.snapshot()["assignments"][0]
+        with self.assertRaises(ChainStateError):
+            self.chain.certify()
+        rejected = self.chain.reject(
+            assignment["id"], ["evidence/chain-negative.txt"], "role check held"
+        )
+        self.assertEqual(rejected["status"], "not-demonstrated")
+        self.chain.certify()
+        self.assertFalse(self.chain.snapshot()["review_pending"])
+
 
 class ChainCoordinatorTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -233,6 +251,81 @@ class ChainCoordinatorTests(unittest.TestCase):
         self.assertFalse(result["accepted"])
         self.assertTrue(result["operator_gate"])
         self.assertEqual(response["chain"]["nodes"], [])
+
+    def test_recorded_finding_reopens_chain_review_and_is_the_next_action(self) -> None:
+        self.coordinator(self._event("chain.certify", {}))
+        upsert(
+            self.engagement,
+            {
+                "id": "F-synthetic-live",
+                "title": "Synthetic authorization finding",
+                "technique": "authorization",
+                "family": "access-control",
+                "severity": "high",
+                "status": "confirmed",
+                "summary": "Synthetic read-only proof",
+                "endpoint": "https://app.synthetic.example.test/items/7",
+                "evidence": ["evidence/F-synthetic-live/response.txt"],
+                "chain": {
+                    "provides": ["read:synthetic-item"],
+                    "requires": [],
+                    "authorized": True,
+                    "safety_requirements": ["read-only"],
+                },
+            },
+        )
+
+        response = self.coordinator()
+
+        self.assertEqual(response["findings"][0]["id"], "F-synthetic-live")
+        node = response["chain"]["nodes"][0]
+        self.assertEqual(node["status"], "demonstrated")
+        self.assertEqual(node["provides"], ["read:synthetic-item"])
+        self.assertTrue(response["chain"]["review_pending"])
+        self.assertEqual(response["next_action"]["kind"], "exploit-finding")
+        self.assertEqual(response["next_action"]["finding_id"], "F-synthetic-live")
+        unchanged = self.coordinator()
+        self.assertEqual(unchanged["chain"]["revision"], response["chain"]["revision"])
+
+    def test_validated_chain_is_persisted_as_a_reportable_finding(self) -> None:
+        for source_id, provides, requires, status in (
+            ("F-provider", ["session:admin"], [], "demonstrated"),
+            ("F-consumer", [], ["session:admin"], "observed"),
+        ):
+            self.coordinator(
+                self._event(
+                    "chain.observe",
+                    {
+                        "node": {
+                            "source_id": source_id,
+                            "asset": "app.synthetic.example.test",
+                            "provides": provides,
+                            "requires": requires,
+                            "status": status,
+                            "evidence": [f"evidence/{source_id}/proof.txt"],
+                        }
+                    },
+                )
+            )
+        assignment = self.coordinator()["chain"]["assignments"][0]
+        response = self.coordinator(
+            self._event(
+                "chain.validate",
+                {
+                    "assignment_id": assignment["id"],
+                    "severity": "critical",
+                    "evidence": ["evidence/chain/combined-proof.txt"],
+                    "title": "Synthetic chained impact",
+                },
+            )
+        )
+
+        result = response["event"]["result"]
+        self.assertEqual(result["stored"], "appended")
+        rows = load_rows(self.engagement / "state" / "findings.jsonl")
+        self.assertEqual(rows[0]["id"], result["finding"]["id"])
+        self.assertEqual(rows[0]["family"], "kill-chain")
+        self.assertEqual(rows[0]["status"], "exploited")
 
 
 if __name__ == "__main__":

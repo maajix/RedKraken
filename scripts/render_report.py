@@ -157,6 +157,31 @@ def remaining_coverage_lines(outcome: dict[str, Any] | None) -> list[str]:
     return lines
 
 
+def chain_review_lines(outcome: dict[str, Any] | None) -> list[str]:
+    chain = (outcome or {}).get("chain") or {}
+    assignments = chain.get("assignments") or []
+    if not chain:
+        return []
+    status = "pending" if chain.get("review_pending") else "certified"
+    lines = ["", "## Kill-Chain Review", "", f"Review status: **{status}**.", ""]
+    if not assignments:
+        lines.append("No evidence-grounded chain edge was identified.")
+        return lines
+    lines.extend(
+        [
+            "| Chain | Status | Severity | Capability | Components |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for assignment in assignments:
+        parents = " → ".join(md(item) for item in assignment.get("parents") or [])
+        lines.append(
+            f"| {md(assignment.get('id'))} | {md(assignment.get('status'))} | "
+            f"{md(assignment.get('severity'))} | {md(assignment.get('token'))} | {parents} |"
+        )
+    return lines
+
+
 def render(
     directory: Path,
     config: dict[str, Any],
@@ -253,6 +278,7 @@ def render(
     else:
         lines.append("No machine-readable not-tested or not-exploitable coverage rows were recorded.")
     lines.extend(remaining_coverage_lines(outcome))
+    lines.extend(chain_review_lines(outcome))
     if report_warnings:
         lines.extend(["", "### Data Quality Warnings", ""])
         lines.extend(f"- {md(warning)}" for warning in sorted(set(report_warnings)))

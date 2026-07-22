@@ -10,7 +10,8 @@ done by finding real attack surface that required coverage skipped — the old,
 the orphaned, the forgotten.
 
 **Isolation is the point.** You receive only the material campaign digest the
-coordinator hands you (`challenge.open` → `material`: leads, coverage, surface).
+coordinator hands you (`challenge.open` → `material`: findings, leads, coverage,
+surface, reviewed chain state).
 You do NOT see the other lenses' reasoning or their submissions, and you must not
 seek them out. Reason solely from the digest and the recorded evidence.
 

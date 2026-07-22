@@ -48,6 +48,11 @@ class CompletionGuardTest(unittest.TestCase):
     def clear_owner(self) -> None:
         self.owner_marker.unlink(missing_ok=True)
 
+    def set_phase(self, phase: str) -> None:
+        (self.engagement / "state" / "run.json").write_text(
+            json.dumps({"current_phase": phase}), encoding="utf-8"
+        )
+
     def write_state(
         self,
         *,
@@ -128,6 +133,31 @@ class CompletionGuardTest(unittest.TestCase):
         LeadState(self.engagement).record_coverage(
             "family", "access-control", "tested"
         )
+        result = self.run_hook({})
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
+    def test_full_pentest_stop_waits_for_chain_and_challenge_gate(self) -> None:
+        self.write_state(status="completed")
+        LeadState(self.engagement).record_coverage(
+            "family", "access-control", "tested"
+        )
+        self.set_phase("full-pentest")
+
+        result = self.run_hook({})
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["decision"], "block")
+        self.assertIn("coordinator", result.stdout.casefold())
+
+    def test_focused_pentest_stop_does_not_require_full_campaign_gate(self) -> None:
+        self.write_state(status="completed")
+        LeadState(self.engagement).record_coverage(
+            "family", "access-control", "tested"
+        )
+        self.set_phase("pentest")
+
         result = self.run_hook({})
 
         self.assertEqual(result.returncode, 0)

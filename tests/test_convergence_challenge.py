@@ -21,6 +21,7 @@ COORDINATOR = ROOT / "scripts" / "campaign_coordinator.py"
 sys.path.insert(0, str(ROOT / "lib"))
 
 from challenge_store import LENSES, ChallengeState, ChallengeStateError  # noqa: E402
+from finding_store import upsert  # noqa: E402
 from lead_store import LeadState  # noqa: E402
 
 
@@ -116,6 +117,12 @@ class ChallengeCoordinatorTests(unittest.TestCase):
         return {"schema_version": 1, "type": kind, "payload": payload}
 
     def _open(self) -> dict[str, object]:
+        seeded = self.coordinator()
+        for entry in seeded["state"]["coverage"]:
+            self.store.record_coverage(
+                "workflow", entry["key"], "tested", reason="synthetic completion"
+            )
+        self.coordinator(self._event("chain.certify", {}))
         return self.coordinator(self._event("challenge.open", {}))
 
     def _explorer(self, **overrides: object) -> dict[str, object]:
@@ -144,7 +151,26 @@ class ChallengeCoordinatorTests(unittest.TestCase):
         self.assertIn("leads", result["material"])
         self.assertIn("coverage", result["material"])
         self.assertIn("surface", result["material"])
+        self.assertIn("findings", result["material"])
+        self.assertIn("chain", result["material"])
         self.assertEqual(response["challenge"]["status"], "open")
+        resumed = self.coordinator()
+        self.assertEqual(resumed["next_action"]["kind"], "challenge-lens")
+        self.assertEqual(resumed["next_action"]["material"], result["material"])
+
+    def test_open_rejects_incomplete_or_unreviewed_campaigns(self) -> None:
+        event = self._event("challenge.open", {})
+        command = [
+            sys.executable,
+            str(COORDINATOR),
+            "--engagement",
+            str(self.engagement),
+            "--event",
+            json.dumps(event),
+        ]
+        result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires converged", result.stderr)
 
     def test_supported_unique_lead_reopens_normal_work(self) -> None:
         opened = self._open()
@@ -161,6 +187,26 @@ class ChallengeCoordinatorTests(unittest.TestCase):
         ids = {lead["id"] for lead in response["state"]["leads"]}
         self.assertIn(accepted_id, ids)
         self.assertFalse(response["reporting_permitted"])
+
+    def test_finding_id_is_valid_support_for_an_explorer_lead(self) -> None:
+        upsert(
+            self.engagement,
+            {
+                "id": "F-synthetic-support",
+                "technique": "synthetic observation",
+                "family": "access-control",
+                "severity": "low",
+                "status": "suspected",
+                "summary": "Synthetic workflow clue",
+                "endpoint": "https://app.synthetic.example.test/workflow",
+            },
+        )
+        self._open()
+        response = self._submit(
+            "abuse-case-adversary",
+            [self._explorer(provenance=["F-synthetic-support"])],
+        )
+        self.assertEqual(len(response["event"]["result"]["accepted"]), 1)
 
     def test_low_quality_ideas_are_rejected_without_counting_as_progress(self) -> None:
         opened = self._open()
@@ -240,6 +286,36 @@ class ChallengeCoordinatorTests(unittest.TestCase):
         )
         self.assertEqual(rejected_only["material_digest"], digest)
         self.assertEqual(rejected_only["event"]["result"]["accepted"], [])
+
+    def test_submission_rejects_material_drift(self) -> None:
+        self._open()
+        self.store.ensure_lead(
+            {
+                "family": "access-control",
+                "kind": "validation",
+                "subject": "https://app.synthetic.example.test/drift",
+            }
+        )
+        event = self._event(
+            "challenge.submit",
+            {"lens": "surface-archaeologist", "leads": []},
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(COORDINATOR),
+                "--engagement",
+                str(self.engagement),
+                "--event",
+                json.dumps(event),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("material changed", result.stderr)
 
 
 if __name__ == "__main__":

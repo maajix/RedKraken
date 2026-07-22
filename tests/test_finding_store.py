@@ -13,6 +13,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "lib" / "finding_store.py"
+sys.path.insert(0, str(ROOT / "lib"))
+
+from finding_store import FindingError, normalize  # noqa: E402
 
 
 class FindingStoreCliTests(unittest.TestCase):
@@ -39,6 +42,32 @@ class FindingStoreCliTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), "appended")
+
+    def test_chain_metadata_is_normalized_and_validated(self) -> None:
+        base = {
+            "id": "SYNTHETIC-CHAIN",
+            "technique": "synthetic",
+            "family": "test",
+            "severity": "medium",
+            "status": "confirmed",
+            "summary": "synthetic capability",
+            "endpoint": "https://app.example.test/",
+            "evidence": ["evidence/synthetic.txt"],
+        }
+        finding = normalize(
+            {
+                **base,
+                "chain": {
+                    "provides": [" session:tester ", "session:tester"],
+                    "requires": [],
+                    "authorized": True,
+                    "safety_requirements": ["read-only"],
+                },
+            }
+        )
+        self.assertEqual(finding["chain"]["provides"], ["session:tester"])
+        with self.assertRaises(FindingError):
+            normalize({**base, "chain": {"authorized": "yes"}})
 
 
 if __name__ == "__main__":

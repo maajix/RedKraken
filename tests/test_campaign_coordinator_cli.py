@@ -124,6 +124,9 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
         self.assertEqual(response["next_work"]["id"], higher["id"])
         self.assertEqual(response["next_work"]["status"], "queued")
         self.assertNotEqual(response["next_work"]["id"], lower["id"])
+        self.assertEqual(response["next_action"]["kind"], "dispatch-lead")
+        self.assertEqual(response["next_action"]["lead_id"], higher["id"])
+        self.assertEqual(response["next_action"]["agent"], "web-vuln-hunter")
         self.assertEqual(
             response["completion"],
             {
@@ -179,6 +182,52 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
         self.assertEqual(len(reopened["state"]["leads"]), 1)
         self.assertEqual(reopened["next_work"]["id"], lead["id"])
 
+    def test_active_lease_is_an_explicit_wait_action(self) -> None:
+        lead = self.run_lead_cli(
+            "upsert",
+            "--json",
+            json.dumps(
+                {
+                    "family": "access-control",
+                    "kind": "validation",
+                    "subject": "https://synthetic.example.test/leased",
+                }
+            ),
+        )["lead"]
+        self.run_lead_cli("lease", lead["id"], "--worker", "worker-synthetic")
+
+        response = self.run_cli()
+
+        self.assertEqual(response["next_action"]["kind"], "await-leases")
+        self.assertEqual(response["next_action"]["leases"][0]["lead_id"], lead["id"])
+
+    def test_compact_view_contains_one_self_sufficient_action(self) -> None:
+        lead = self.run_lead_cli(
+            "upsert",
+            "--json",
+            json.dumps(
+                {
+                    "family": "injection",
+                    "kind": "validation",
+                    "subject": "https://synthetic.example.test/compact",
+                }
+            ),
+        )["lead"]
+        response = self.run_json_command(
+            [
+                sys.executable,
+                str(CLI),
+                "--engagement",
+                str(self.engagement),
+                "--compact",
+            ]
+        )
+
+        self.assertEqual(response["next_action"]["lead"]["id"], lead["id"])
+        self.assertNotIn("state", response)
+        self.assertNotIn("chain", response)
+        self.assertNotIn("remaining_frontier", response["completion"])
+
     def test_budget_exhaustion_returns_no_eligible_work(self) -> None:
         self.run_lead_cli("configure", "--max-iterations", "1")
         self.run_lead_cli(
@@ -216,6 +265,8 @@ class CampaignCoordinatorCliTests(unittest.TestCase):
         )
         self.assertIsNone(response["next_work"])
         self.assertEqual(len(response["completion"]["remaining_frontier"]), 1)
+        self.assertTrue(response["reporting_permitted"])
+        self.assertEqual(response["next_action"]["kind"], "report-terminal")
 
 
 if __name__ == "__main__":
